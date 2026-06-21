@@ -4,505 +4,578 @@
 <meta charset="UTF-8"/>
 <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
 <title>5M Faith Tracker</title>
-<script src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
-<script src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
-<script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
 <style>
-  * { box-sizing: border-box; margin: 0; padding: 0; }
-  body { font-family: Georgia, serif; background: #f9f7ff; }
-  textarea, input { font-family: Georgia, serif; }
-  a { text-decoration: none; }
+*{box-sizing:border-box;margin:0;padding:0;}
+body{font-family:Georgia,serif;background:#f9f7ff;min-height:100vh;}
+button,input,textarea{font-family:Georgia,serif;}
+a{text-decoration:none;}
+.card{background:#fff;border-radius:14px;padding:18px;margin-bottom:16px;box-shadow:0 2px 8px rgba(0,0,0,0.07);}
+.btn{border:none;border-radius:10px;padding:11px 0;font-size:14px;cursor:pointer;font-family:Georgia,serif;font-weight:bold;width:100%;}
+.pill{padding:7px 14px;border-radius:99px;font-size:13px;cursor:pointer;font-family:Georgia,serif;}
+.hidden{display:none!important;}
+input[type=text],input[type=url],input[type=date],textarea{width:100%;border:2px solid #e5e7eb;border-radius:10px;padding:9px 12px;font-size:14px;outline:none;color:#333;box-sizing:border-box;}
 </style>
 </head>
 <body>
-<div id="root"></div>
-<script type="text/babel">
-const { useState } = React;
-
-const MS = [
-  { key:"mind",     label:"Mind",     emoji:"🧠", color:"#1e3a8a", light:"#dbeafe", accent:"#3b82f6", prompt:"What truth, scripture, or thought is God speaking to your mind today?",                          appPrompt:"How will you renew your mind or act on this truth today?" },
-  { key:"mood",     label:"Mood",     emoji:"🌤", color:"#92400e", light:"#fef3c7", accent:"#f59e0b", prompt:"How is your heart and emotional state before God right now?",                                    appPrompt:"What will you do to align your emotions with God's peace today?" },
-  { key:"matter",   label:"Matter",   emoji:"🌿", color:"#14532d", light:"#dcfce7", accent:"#22c55e", prompt:"What practical life area (work, health, finances, relationships) needs God's guidance?",         appPrompt:"What concrete step will you take to steward this area faithfully?" },
-  { key:"ministry", label:"Ministry", emoji:"❤️", color:"#c2410c", light:"#ffedd5", accent:"#f97316", prompt:"Who or what is God calling you to serve, encourage, or pour into today?",                       appPrompt:"What specific act of service or love will you carry out?" },
-  { key:"mystery",  label:"Mystery",  emoji:"🌙", color:"#3b0764", light:"#f3e8ff", accent:"#a855f7", prompt:"What aspect of God's nature, a scripture, or a spiritual question is stirring wonder in you?", appPrompt:"How will you sit with or explore this mystery — through prayer, study, or surrender?" },
+<div id="app"></div>
+<script>
+const MS=[
+  {key:"mind",    label:"Mind",    emoji:"🧠",color:"#1e3a8a",light:"#dbeafe",accent:"#3b82f6",prompt:"What truth, scripture, or thought is God speaking to your mind today?",            appPrompt:"How will you renew your mind or act on this truth today?"},
+  {key:"mood",    label:"Mood",    emoji:"🌤",color:"#92400e",light:"#fef3c7",accent:"#f59e0b",prompt:"How is your heart and emotional state before God right now?",                      appPrompt:"What will you do to align your emotions with God's peace today?"},
+  {key:"matter",  label:"Matter",  emoji:"🌿",color:"#14532d",light:"#dcfce7",accent:"#22c55e",prompt:"What practical life area (work, health, finances, relationships) needs God's guidance?", appPrompt:"What concrete step will you take to steward this area faithfully?"},
+  {key:"ministry",label:"Ministry",emoji:"❤️",color:"#c2410c",light:"#ffedd5",accent:"#f97316",prompt:"Who or what is God calling you to serve, encourage, or pour into today?",           appPrompt:"What specific act of service or love will you carry out?"},
+  {key:"mystery", label:"Mystery", emoji:"🌙",color:"#3b0764",light:"#f3e8ff",accent:"#a855f7",prompt:"What aspect of God's nature, a scripture, or a spiritual question is stirring wonder in you?", appPrompt:"How will you sit with or explore this mystery — through prayer, study, or surrender?"},
 ];
 
-const today = () => new Date().toISOString().split("T")[0];
-const getWeekDates  = () => { const d=new Date(),day=d.getDay(); return Array.from({length:7},(_,i)=>{ const x=new Date(d); x.setDate(d.getDate()-day+i); return x.toISOString().split("T")[0]; }); };
-const getMonthDates = () => { const d=new Date(),y=d.getFullYear(),mo=d.getMonth(),days=new Date(y,mo+1,0).getDate(); return Array.from({length:days},(_,i)=>new Date(y,mo,i+1).toISOString().split("T")[0]); };
+const KEY="5m_v4";
+const today=()=>new Date().toISOString().split("T")[0];
+const fmtDate=d=>new Date(d).toLocaleDateString("en-SG",{weekday:"long",month:"long",day:"numeric"});
+const fmtShort=d=>new Date(d).toLocaleDateString("en-SG",{weekday:"short",month:"short",day:"numeric"});
 
-const KEY = "5m_faith_tracker_v3";
-const load = () => { try { return JSON.parse(localStorage.getItem(KEY)||"{}"); } catch { return {}; } };
-const persist = d => { try { localStorage.setItem(KEY,JSON.stringify(d)); } catch {} };
+let state={
+  view:"home", activeM:null, selDate:today(), sumTab:"overview",
+  reflPeriod:"week", reflM:"mind",
+  outM:"mind", outDate:today(), outText:"", outFilter:"all", outEdit:null,
+  othDate:today(), othText:"", othTitle:"", othEdit:null,
+  resUrl:"", resDesc:"", resEditId:null,
+  openWA:{}, openRfl:{}, openOut:{}, openOth:{},
+  data: loadData()
+};
 
-/* ── Checkbox list ── */
-function CheckboxList({ items, onChange, accent, light }) {
-  const [txt, setTxt] = useState("");
-  const add  = () => { const t=txt.trim(); if(!t)return; onChange([...items,{id:Date.now(),text:t,checked:false}]); setTxt(""); };
-  const tog  = id => onChange(items.map(i=>i.id===id?{...i,checked:!i.checked}:i));
-  const del  = id => onChange(items.filter(i=>i.id!==id));
-  return (
-    <div>
-      {items.map(item=>(
-        <div key={item.id} style={{display:"flex",alignItems:"flex-start",gap:10,marginBottom:10,padding:"10px 12px",background:item.checked?light:"#f9fafb",borderRadius:10,border:`1px solid ${item.checked?accent:"#e5e7eb"}`}}>
-          <div onClick={()=>tog(item.id)} style={{width:20,height:20,borderRadius:5,border:`2px solid ${item.checked?accent:"#d1d5db"}`,background:item.checked?accent:"#fff",display:"flex",alignItems:"center",justifyContent:"center",cursor:"pointer",flexShrink:0,marginTop:1}}>
-            {item.checked&&<span style={{color:"#fff",fontSize:13,lineHeight:1}}>✓</span>}
-          </div>
-          <span style={{flex:1,fontSize:14,color:item.checked?"#6b7280":"#333",textDecoration:item.checked?"line-through":"none",lineHeight:1.5}}>{item.text}</span>
-          <button onClick={()=>del(item.id)} style={{background:"none",border:"none",color:"#d1d5db",cursor:"pointer",fontSize:16,padding:0,lineHeight:1,flexShrink:0}}>×</button>
-        </div>
-      ))}
-      <div style={{display:"flex",gap:8,marginTop:4}}>
-        <input value={txt} onChange={e=>setTxt(e.target.value)} onKeyDown={e=>e.key==="Enter"&&add()} placeholder="Add an application step..." style={{flex:1,border:`2px solid ${accent}`,borderRadius:10,padding:"9px 12px",fontSize:14,outline:"none",color:"#333"}}/>
-        <button onClick={add} style={{background:accent,color:"#fff",border:"none",borderRadius:10,padding:"9px 16px",fontSize:14,cursor:"pointer",fontWeight:"bold"}}>+</button>
-      </div>
-    </div>
-  );
+function loadData(){try{return JSON.parse(localStorage.getItem(KEY)||"{}");}catch{return{};}}
+function save(){try{localStorage.setItem(KEY,JSON.stringify(state.data));}catch{}}
+function set(obj){Object.assign(state,obj);render();}
+function setData(d){state.data=d;save();render();}
+
+function getEntry(mKey,date){return state.data[date||state.selDate]?.[mKey]||{thoughts:"",applications:[]};}
+function updField(mKey,field,val){
+  const d=state.data, s=state.selDate;
+  d[s]=d[s]||{};
+  d[s][mKey]=d[s][mKey]||{thoughts:"",applications:[]};
+  d[s][mKey][field]=val;
+  save(); render();
+}
+function getOthers(){return state.data.__others||[];}
+function getOutcomes(){return state.data.__outcomes||[];}
+function getResources(){return state.data.__resources||[];}
+function saveList(key,list){state.data[key]=list;save();render();}
+
+function getWeekDates(){const d=new Date(),day=d.getDay();return Array.from({length:7},(_,i)=>{const x=new Date(d);x.setDate(d.getDate()-day+i);return x.toISOString().split("T")[0];});}
+function getMonthDates(){const d=new Date(),y=d.getFullYear(),mo=d.getMonth(),days=new Date(y,mo+1,0).getDate();return Array.from({length:days},(_,i)=>new Date(y,mo,i+1).toISOString().split("T")[0]);}
+
+function extractVid(url){const m=url.match(/(?:youtu\.be\/|v=|\/embed\/|\/shorts\/)([A-Za-z0-9_-]{11})/);return m?m[1]:null;}
+
+function tog(mapKey,k){state[mapKey]={...state[mapKey],[k]:!state[mapKey][k]};render();}
+
+/* ── render helpers ── */
+function el(tag,attrs,children){
+  const e=document.createElement(tag);
+  for(const[k,v] of Object.entries(attrs||{})){
+    if(k==="style"&&typeof v==="object"){Object.assign(e.style,v);}
+    else if(k.startsWith("on")&&typeof v==="function"){e.addEventListener(k.slice(2).toLowerCase(),v);}
+    else if(k==="className"){e.className=v;}
+    else{e.setAttribute(k,v);}
+  }
+  if(children){
+    (Array.isArray(children)?children:[children]).forEach(c=>{
+      if(c==null||c===false)return;
+      e.appendChild(typeof c==="string"||typeof c==="number"?document.createTextNode(c):c);
+    });
+  }
+  return e;
 }
 
-/* ── Backup / Restore ── */
-function BackupRestore({ data, onRestore }) {
-  const exp = () => {
-    const blob=new Blob([JSON.stringify(data,null,2)],{type:"application/json"});
-    const url=URL.createObjectURL(blob), a=document.createElement("a");
-    a.href=url; a.download="5M-Faith-Tracker-Backup-"+today()+".json"; a.click(); URL.revokeObjectURL(url);
-  };
-  const imp = e => {
-    const file=e.target.files[0]; if(!file)return;
+function backBtn(label,onclick){return el("button",{style:{background:"rgba(255,255,255,0.2)",border:"none",color:"#fff",borderRadius:"8px",padding:"6px 14px",cursor:"pointer",marginBottom:"12px",fontSize:"14px"},onClick:onclick},label||"← Back");}
+
+function pillBtn(active,color,light,accent,label,onclick){
+  return el("button",{className:"pill",style:{border:`2px solid ${active?accent:"#e5e7eb"}`,background:active?light:"#fff",color:active?color:"#888",fontWeight:active?"bold":"normal"},onClick:onclick},label);
+}
+
+function colRow(isOpen,onToggle,accent,bg,leftEl,rightEls,contentEl){
+  const header=el("div",{style:{display:"flex",justifyContent:"space-between",alignItems:"center",padding:"10px 14px",background:isOpen?bg:"#f9fafb",cursor:"pointer"},onClick:onToggle},[
+    el("div",{style:{flex:1,minWidth:0}},leftEl),
+    el("div",{style:{display:"flex",gap:"6px",alignItems:"center",flexShrink:0}},[...(rightEls||[]),el("span",{style:{color:"#aaa",fontSize:"14px"}},isOpen?"▲":"▼")])
+  ]);
+  const wrap=el("div",{style:{borderRadius:"10px",border:"1px solid #e5e7eb",marginBottom:"10px",overflow:"hidden"}},[header]);
+  if(isOpen){
+    const body=el("div",{style:{padding:"12px 14px",borderTop:`2px solid ${accent}`}},contentEl);
+    wrap.appendChild(body);
+  }
+  return wrap;
+}
+
+function checkItem(a,accent,light){
+  return el("div",{style:{display:"flex",alignItems:"flex-start",gap:"10px",marginBottom:"10px",padding:"10px 12px",background:a.checked?light:"#f9fafb",borderRadius:"10px",border:`1px solid ${a.checked?accent:"#e5e7eb"}`}},[
+    el("div",{style:{width:"20px",height:"20px",borderRadius:"5px",border:`2px solid ${a.checked?accent:"#d1d5db"}`,background:a.checked?accent:"#fff",display:"flex",alignItems:"center",justifyContent:"center",cursor:"pointer",flexShrink:"0",marginTop:"1px"},onClick:()=>{
+      // handled by parent
+    }},a.checked?el("span",{style:{color:"#fff",fontSize:"13px",lineHeight:"1"}},"✓"):null),
+    el("span",{style:{flex:1,fontSize:"14px",color:a.checked?"#6b7280":"#333",textDecoration:a.checked?"line-through":"none",lineHeight:"1.5"}},a.text),
+  ]);
+}
+
+/* ════════════ VIEWS ════════════ */
+
+function renderHome(){
+  const isToday=state.selDate===today();
+  const completedToday=MS.filter(m=>{const e=getEntry(m.key);return e.thoughts?.trim()||e.applications?.length>0;}).length;
+  const wrap=el("div",{style:{minHeight:"100vh",background:"#f9f7ff"}});
+
+  // header
+  const prevBtn=el("button",{style:{background:"rgba(255,255,255,0.2)",border:"none",color:"#fff",borderRadius:"8px",padding:"6px 12px",cursor:"pointer",fontSize:"16px"},onClick:()=>{const d=new Date(state.selDate);d.setDate(d.getDate()-1);set({selDate:d.toISOString().split("T")[0]});}},"‹");
+  const nextBtn=el("button",{style:{background:"rgba(255,255,255,0.2)",border:"none",color:state.selDate>=today()?"rgba(255,255,255,0.3)":"#fff",borderRadius:"8px",padding:"6px 12px",cursor:state.selDate>=today()?"default":"pointer",fontSize:"16px"},onClick:()=>{if(state.selDate>=today())return;const d=new Date(state.selDate);d.setDate(d.getDate()+1);set({selDate:d.toISOString().split("T")[0]});}},"›");
+  const header=el("div",{style:{background:"linear-gradient(135deg,#1e3a8a 0%,#3b0764 100%)",color:"#fff",padding:"24px 16px 20px",textAlign:"center"}},[
+    el("h1",{style:{margin:0,fontSize:"26px",letterSpacing:"1px"}},"✝ 5M Faith Tracker"),
+    el("p",{style:{margin:"6px 0 16px",opacity:"0.8",fontSize:"13px"}},"Mind · Mood · Matter · Ministry · Mystery"),
+    el("div",{style:{display:"flex",alignItems:"center",justifyContent:"center",gap:"10px"}},[
+      prevBtn,
+      el("span",{style:{fontSize:"14px",fontWeight:"bold"}},(isToday?"Today — ":"")+fmtDate(state.selDate)),
+      nextBtn
+    ])
+  ]);
+  wrap.appendChild(header);
+
+  const inner=el("div",{style:{padding:"16px",maxWidth:"600px",margin:"0 auto"}});
+
+  if(isToday&&completedToday<5){
+    inner.appendChild(el("div",{style:{background:"#fef3c7",border:"1px solid #f59e0b",borderRadius:"12px",padding:"10px 14px",marginBottom:"8px",fontSize:"13px",color:"#92400e"}},`🔔 You've completed ${completedToday}/5 sections today. Keep going!`));
+  }
+  if(isToday&&completedToday===5){
+    inner.appendChild(el("div",{style:{background:"#dcfce7",border:"1px solid #22c55e",borderRadius:"12px",padding:"10px 14px",marginBottom:"8px",fontSize:"13px",color:"#14532d"}},"🎉 All 5Ms done for today! Well done."));
+  }
+
+  MS.forEach(m=>{
+    const entry=getEntry(m.key);
+    const hasT=!!entry.thoughts?.trim();
+    const appN=entry.applications?.length||0;
+    const chkN=entry.applications?.filter(a=>a.checked).length||0;
+    const filled=hasT||appN>0;
+    const card=el("div",{style:{background:"#fff",borderRadius:"16px",marginBottom:"12px",overflow:"hidden",boxShadow:"0 2px 10px rgba(0,0,0,0.07)",cursor:"pointer",border:`2px solid ${filled?m.accent:"#e5e7eb"}`,display:"flex"},onClick:()=>set({view:"detail",activeM:m.key})},[
+      el("div",{style:{background:m.color,width:"70px",display:"flex",flexDirection:"column",alignItems:"center",justifyContent:"center",padding:"16px 0"}},[
+        el("span",{style:{fontSize:"26px"}},m.emoji),
+        el("span",{style:{color:"#fff",fontSize:"12px",fontWeight:"bold",marginTop:"4px"}},m.label)
+      ]),
+      el("div",{style:{flex:1,padding:"14px 16px"}},[
+        el("p",{style:{margin:"0 0 8px",fontSize:"12px",color:"#888",lineHeight:"1.5"}},m.prompt.slice(0,70)+"…"),
+        el("div",{style:{display:"flex",gap:"8px",flexWrap:"wrap"}},[
+          el("span",{style:{fontSize:"11px",padding:"3px 10px",borderRadius:"99px",background:hasT?m.light:"#f3f4f6",color:hasT?m.color:"#999",fontWeight:"bold"}},hasT?"✓ Reflection":"○ Reflection"),
+          el("span",{style:{fontSize:"11px",padding:"3px 10px",borderRadius:"99px",background:appN>0?m.light:"#f3f4f6",color:appN>0?m.color:"#999",fontWeight:"bold"}},appN>0?`✓ ${chkN}/${appN} steps`:"○ Application"),
+        ])
+      ]),
+      el("div",{style:{display:"flex",alignItems:"center",paddingRight:"14px"}},el("span",{style:{color:"#ccc",fontSize:"20px"}},"›"))
+    ]);
+    inner.appendChild(card);
+  });
+
+  inner.appendChild(el("button",{style:{width:"100%",padding:"14px",background:"linear-gradient(135deg,#3b0764,#1e3a8a)",color:"#fff",border:"none",borderRadius:"14px",fontSize:"15px",cursor:"pointer",marginTop:"8px",letterSpacing:"0.5px"},onClick:()=>set({view:"progress",sumTab:"overview"})},"📊 View Progress"));
+  inner.appendChild(el("button",{style:{width:"100%",padding:"14px",background:"linear-gradient(135deg,#14532d,#22c55e)",color:"#fff",border:"none",borderRadius:"14px",fontSize:"15px",cursor:"pointer",marginTop:"10px",letterSpacing:"0.5px"},onClick:()=>set({view:"resources"})},"📺 Resources"));
+
+  wrap.appendChild(inner);
+  return wrap;
+}
+
+function renderDetail(){
+  const m=MS.find(x=>x.key===state.activeM);
+  const entry=getEntry(m.key);
+  const wrap=el("div",{style:{minHeight:"100vh",background:m.light}});
+
+  wrap.appendChild(el("div",{style:{background:m.color,color:"#fff",padding:"20px 16px 16px"}},[
+    backBtn("← Back",()=>set({view:"home"})),
+    el("div",{style:{fontSize:"36px"}},m.emoji),
+    el("h2",{style:{margin:"4px 0 0",fontSize:"24px"}},m.label),
+    el("p",{style:{margin:"4px 0 0",opacity:"0.85",fontSize:"13px"}},state.selDate)
+  ]));
+
+  const inner=el("div",{style:{padding:"16px",maxWidth:"600px",margin:"0 auto"}});
+
+  // Reflection card
+  const reflCard=el("div",{className:"card"},[
+    el("p",{style:{color:m.color,fontWeight:"bold",fontSize:"14px",marginBottom:"8px"}},"✦ Today's Reflection"),
+    el("p",{style:{color:"#444",fontSize:"14px",lineHeight:"1.6",margin:"0 0 12px"}},m.prompt),
+  ]);
+  const reflTA=el("textarea",{style:{width:"100%",minHeight:"120px",border:`2px solid ${m.accent}`,borderRadius:"10px",padding:"12px",fontSize:"14px",resize:"vertical",boxSizing:"border-box",outline:"none",color:"#333"},placeholder:"Write your thoughts here..."},null);
+  reflTA.value=entry.thoughts||"";
+  reflTA.addEventListener("input",e=>updField(m.key,"thoughts",e.target.value));
+  reflCard.appendChild(reflTA);
+  inner.appendChild(reflCard);
+
+  // Application card
+  const appCard=el("div",{className:"card"},[
+    el("p",{style:{color:m.color,fontWeight:"bold",fontSize:"14px",marginBottom:"4px"}},"✦ Application Steps"),
+    el("p",{style:{color:"#888",fontSize:"13px",lineHeight:"1.5",margin:"0 0 14px"}},m.appPrompt),
+  ]);
+  renderCheckboxList(appCard,entry.applications||[],m,m.key);
+  inner.appendChild(appCard);
+  wrap.appendChild(inner);
+  return wrap;
+}
+
+function renderCheckboxList(parent,items,m,mKey){
+  const listWrap=el("div",{});
+  items.forEach((a,i)=>{
+    const row=el("div",{style:{display:"flex",alignItems:"flex-start",gap:"10px",marginBottom:"10px",padding:"10px 12px",background:a.checked?m.light:"#f9fafb",borderRadius:"10px",border:`1px solid ${a.checked?m.accent:"#e5e7eb"}`}},[
+      el("div",{style:{width:"20px",height:"20px",borderRadius:"5px",border:`2px solid ${a.checked?m.accent:"#d1d5db"}`,background:a.checked?m.accent:"#fff",display:"flex",alignItems:"center",justifyContent:"center",cursor:"pointer",flexShrink:"0",marginTop:"1px"},onClick:()=>{
+        const apps=[...getEntry(mKey).applications];
+        apps[i]={...apps[i],checked:!apps[i].checked};
+        updField(mKey,"applications",apps);
+      }},a.checked?el("span",{style:{color:"#fff",fontSize:"13px",lineHeight:"1"}},"✓"):null),
+      el("span",{style:{flex:1,fontSize:"14px",color:a.checked?"#6b7280":"#333",textDecoration:a.checked?"line-through":"none",lineHeight:"1.5"}},a.text),
+      el("button",{style:{background:"none",border:"none",color:"#d1d5db",cursor:"pointer",fontSize:"16px",padding:"0",lineHeight:"1",flexShrink:"0"},onClick:()=>{
+        const apps=getEntry(mKey).applications.filter((_,j)=>j!==i);
+        updField(mKey,"applications",apps);
+      }},"×")
+    ]);
+    listWrap.appendChild(row);
+  });
+  const inputRow=el("div",{style:{display:"flex",gap:"8px",marginTop:"4px"}});
+  const inp=el("input",{type:"text",placeholder:"Add an application step...",style:{flex:1,border:`2px solid ${m.accent}`,borderRadius:"10px",padding:"9px 12px",fontSize:"14px",outline:"none",color:"#333"}},null);
+  inp.addEventListener("keydown",e=>{if(e.key==="Enter"){addApp();}});
+  const addBtn=el("button",{style:{background:m.accent,color:"#fff",border:"none",borderRadius:"10px",padding:"9px 16px",fontSize:"14px",cursor:"pointer",fontWeight:"bold"},onClick:()=>addApp()},"+");
+  function addApp(){const t=inp.value.trim();if(!t)return;const apps=[...getEntry(mKey).applications,{id:Date.now(),text:t,checked:false}];updField(mKey,"applications",apps);inp.value="";}
+  inputRow.appendChild(inp);inputRow.appendChild(addBtn);
+  parent.appendChild(listWrap);
+  parent.appendChild(inputRow);
+}
+
+function renderProgress(){
+  const tabs=["overview","reflections","outcomes","others"];
+  const wrap=el("div",{style:{minHeight:"100vh",background:"#f8f5ff"}});
+  const hdr=el("div",{style:{background:"#3b0764",color:"#fff",padding:"20px 16px 0"}});
+  hdr.appendChild(backBtn("← Back",()=>set({view:"home"})));
+  hdr.appendChild(el("h2",{style:{margin:0,fontSize:"22px"}},"📊 Progress"));
+  hdr.appendChild(el("p",{style:{margin:"4px 0 16px",opacity:"0.8",fontSize:"13px"}},"Your faith journey overview"));
+  const tabRow=el("div",{style:{display:"flex",gap:"4px",overflowX:"auto"}});
+  tabs.forEach(t=>{
+    tabRow.appendChild(el("button",{style:{padding:"10px 16px",background:state.sumTab===t?"#fff":"transparent",color:state.sumTab===t?"#3b0764":"rgba(255,255,255,0.75)",border:"none",borderRadius:"10px 10px 0 0",cursor:"pointer",fontSize:"13px",fontWeight:state.sumTab===t?"bold":"normal",whiteSpace:"nowrap"},onClick:()=>set({sumTab:t})},t.charAt(0).toUpperCase()+t.slice(1)));
+  });
+  hdr.appendChild(tabRow);
+  wrap.appendChild(hdr);
+
+  const inner=el("div",{style:{padding:"16px",maxWidth:"600px",margin:"0 auto"}});
+
+  if(state.sumTab==="overview") renderOverview(inner);
+  else if(state.sumTab==="reflections") renderReflections(inner);
+  else if(state.sumTab==="outcomes") renderOutcomes(inner);
+  else if(state.sumTab==="others") renderOthers(inner);
+
+  wrap.appendChild(inner);
+  return wrap;
+}
+
+function renderOverview(inner){
+  const weekDates=getWeekDates();
+  // Backup card
+  const bkCard=el("div",{className:"card"});
+  bkCard.appendChild(el("p",{style:{color:"#3b0764",fontWeight:"bold",fontSize:"15px",margin:"0 0 6px"}},"🗄 Backup & Restore"));
+  bkCard.appendChild(el("p",{style:{color:"#888",fontSize:"13px",margin:"0 0 14px",lineHeight:"1.5"}},"Export your data to back it up or transfer to another device."));
+  const bRow=el("div",{style:{display:"flex",gap:"8px"}});
+  bRow.appendChild(el("button",{style:{flex:1,padding:"10px 0",background:"#3b0764",color:"#fff",border:"none",borderRadius:"10px",fontSize:"14px",cursor:"pointer",fontWeight:"bold"},onClick:()=>{
+    const blob=new Blob([JSON.stringify(state.data,null,2)],{type:"application/json"});
+    const url=URL.createObjectURL(blob),a=document.createElement("a");
+    a.href=url;a.download="5M-Backup-"+today()+".json";a.click();URL.revokeObjectURL(url);
+  }},"⬇ Export Backup"));
+  const restLabel=el("label",{style:{flex:1,padding:"10px 0",background:"#f3e8ff",color:"#3b0764",border:"2px solid #a855f7",borderRadius:"10px",fontSize:"14px",cursor:"pointer",fontWeight:"bold",textAlign:"center",display:"block"}},"⬆ Restore Backup");
+  const restInput=el("input",{type:"file",accept:".json",style:{display:"none"}},null);
+  restInput.addEventListener("change",e=>{
+    const file=e.target.files[0];if(!file)return;
     const r=new FileReader();
-    r.onload=ev=>{ try { const p=JSON.parse(ev.target.result); if(window.confirm("Replace all data with this backup?")){ onRestore(p); alert("✅ Restored!"); } } catch { alert("❌ Invalid file."); } };
-    r.readAsText(file); e.target.value="";
-  };
-  return (
-    <div style={{background:"#fff",borderRadius:14,padding:18,marginBottom:16,boxShadow:"0 2px 8px rgba(0,0,0,0.07)"}}>
-      <p style={{color:"#3b0764",fontWeight:"bold",fontSize:15,margin:"0 0 6px"}}>🗄 Backup & Restore</p>
-      <p style={{color:"#888",fontSize:13,margin:"0 0 14px",lineHeight:1.5}}>Export your data as a JSON file to back it up or transfer to another device.</p>
-      <div style={{display:"flex",gap:8}}>
-        <button onClick={exp} style={{flex:1,padding:"10px 0",background:"#3b0764",color:"#fff",border:"none",borderRadius:10,fontSize:14,cursor:"pointer",fontWeight:"bold"}}>⬇ Export Backup</button>
-        <label style={{flex:1,padding:"10px 0",background:"#f3e8ff",color:"#3b0764",border:"2px solid #a855f7",borderRadius:10,fontSize:14,cursor:"pointer",fontWeight:"bold",textAlign:"center"}}>
-          ⬆ Restore Backup
-          <input type="file" accept=".json" onChange={imp} style={{display:"none"}}/>
-        </label>
-      </div>
-    </div>
-  );
+    r.onload=ev=>{try{const p=JSON.parse(ev.target.result);if(confirm("Replace all data with backup?")){ setData(p);alert("✅ Restored!");}}catch{alert("❌ Invalid file.");}};
+    r.readAsText(file);e.target.value="";
+  });
+  restLabel.appendChild(restInput);
+  bRow.appendChild(restLabel);
+  bkCard.appendChild(bRow);
+  inner.appendChild(bkCard);
+
+  // Daily completion
+  const dcCard=el("div",{className:"card"});
+  dcCard.appendChild(el("p",{style:{color:"#3b0764",fontWeight:"bold",fontSize:"15px",margin:"0 0 14px"}},"Daily Completion"));
+  const barRow=el("div",{style:{display:"flex",gap:"8px",justifyContent:"space-between"}});
+  weekDates.forEach(d=>{
+    const count=MS.filter(m=>{const e=state.data[d]?.[m.key];return e?.thoughts?.trim()||e?.applications?.length>0;}).length;
+    const col=el("div",{style:{flex:1,textAlign:"center"}});
+    const barWrap=el("div",{style:{height:"80px",background:"#f3e8ff",borderRadius:"8px",display:"flex",alignItems:"flex-end",overflow:"hidden"}});
+    barWrap.appendChild(el("div",{style:{width:"100%",height:`${(count/5)*100}%`,background:"#a855f7",borderRadius:"8px 8px 0 0"}},null));
+    col.appendChild(barWrap);
+    col.appendChild(el("p",{style:{fontSize:"11px",color:"#666",margin:"4px 0 0"}},new Date(d).toLocaleDateString("en-SG",{weekday:"short"})));
+    col.appendChild(el("p",{style:{fontSize:"12px",color:"#a855f7",margin:0,fontWeight:"bold"}},`${count}/5`));
+    barRow.appendChild(col);
+  });
+  dcCard.appendChild(barRow);
+  inner.appendChild(dcCard);
+
+  // Progress by section
+  const psCard=el("div",{className:"card"});
+  psCard.appendChild(el("p",{style:{color:"#3b0764",fontWeight:"bold",fontSize:"15px",margin:"0 0 14px"}},"Progress by Section"));
+  MS.forEach(m=>{
+    const count=weekDates.filter(d=>{const e=state.data[d]?.[m.key];return e?.thoughts?.trim()||e?.applications?.length>0;}).length;
+    const row=el("div",{style:{marginBottom:"12px"}});
+    row.appendChild(el("div",{style:{display:"flex",justifyContent:"space-between",marginBottom:"4px"}},[
+      el("span",{style:{fontSize:"14px",color:m.color,fontWeight:"bold"}},`${m.emoji} ${m.label}`),
+      el("span",{style:{fontSize:"13px",color:"#666"}},`${count}/7 days`)
+    ]));
+    const bar=el("div",{style:{background:m.light,borderRadius:"99px",height:"10px"}});
+    bar.appendChild(el("div",{style:{width:`${(count/7)*100}%`,background:m.accent,height:"10px",borderRadius:"99px"}},null));
+    row.appendChild(bar);
+    psCard.appendChild(row);
+  });
+  inner.appendChild(psCard);
+
+  // Applications this week
+  const appsCard=el("div",{className:"card"});
+  appsCard.appendChild(el("p",{style:{color:"#3b0764",fontWeight:"bold",fontSize:"15px",margin:"0 0 14px"}},"✦ Applications This Week"));
+  const weekApps=weekDates.flatMap(d=>MS.map(m=>{const apps=state.data[d]?.[m.key]?.applications||[];return apps.length>0?{date:d,m,apps}:null;}).filter(Boolean));
+  if(weekApps.length===0){appsCard.appendChild(el("p",{style:{color:"#999",fontSize:"14px",fontStyle:"italic"}},"No applications recorded yet this week."));}
+  else{weekApps.forEach((item,i)=>{
+    appsCard.appendChild(colRow(
+      !!state.openWA[i],()=>tog("openWA",i),item.m.accent,item.m.light,
+      el("div",{style:{display:"flex",gap:"8px",alignItems:"center",flexWrap:"wrap"}},[
+        el("span",{style:{fontSize:"13px",fontWeight:"bold",color:item.m.color}},`${item.m.emoji} ${item.m.label}`),
+        el("span",{style:{fontSize:"11px",color:"#999"}},fmtShort(item.date)),
+        el("span",{style:{fontSize:"11px",background:item.m.light,color:item.m.color,borderRadius:"99px",padding:"2px 8px"}},`${item.apps.filter(a=>a.checked).length}/${item.apps.length} done`)
+      ]),null,
+      item.apps.map(a=>el("div",{style:{display:"flex",alignItems:"center",gap:"8px",marginBottom:"5px"}},[
+        el("div",{style:{width:"16px",height:"16px",borderRadius:"4px",border:`2px solid ${item.m.accent}`,background:a.checked?item.m.accent:"#fff",display:"flex",alignItems:"center",justifyContent:"center",flexShrink:"0"}},a.checked?el("span",{style:{color:"#fff",fontSize:"10px"}},"✓"):null),
+        el("span",{style:{fontSize:"13px",color:a.checked?"#9ca3af":"#444",textDecoration:a.checked?"line-through":"none"}},a.text)
+      ]))
+    ));
+  });}
+  inner.appendChild(appsCard);
 }
 
-/* ══════════════════════════════════════════
-   MAIN APP
-══════════════════════════════════════════ */
-function App() {
-  const [view,        setView]        = useState("home");
-  const [activeM,     setActiveM]     = useState(null);
-  const [data,        setData]        = useState(load);
-  const [selDate,     setSelDate]     = useState(today());
-  const [sumTab,      setSumTab]      = useState("overview");
-  const [reflPeriod,  setReflPeriod]  = useState("week");
-  const [reflM,       setReflM]       = useState("mind");
+function renderReflections(inner){
+  const reflDates=state.reflPeriod==="week"?getWeekDates():getMonthDates();
+  const reflMeta=MS.find(x=>x.key===state.reflM);
+  const reflEntries=reflDates.map(d=>{const e=state.data[d]?.[state.reflM];if(!e?.thoughts?.trim()&&!e?.applications?.length)return null;return{date:d,thoughts:e.thoughts||"",applications:e.applications||[]};}).filter(Boolean);
 
-  // Collapsible maps
-  const [openWA,  setOpenWA]  = useState({});
-  const [openRfl, setOpenRfl] = useState({});
-  const [openOut, setOpenOut] = useState({});
-  const [openOth, setOpenOth] = useState({});
-  const tog = (fn,k) => fn(p=>({...p,[k]:!p[k]}));
+  const filterCard=el("div",{className:"card"});
+  filterCard.appendChild(el("p",{style:{color:"#3b0764",fontWeight:"bold",fontSize:"14px",margin:"0 0 12px"}},"Filter Reflections"));
+  filterCard.appendChild(el("p",{style:{fontSize:"12px",color:"#888",margin:"0 0 6px"}},"Period"));
+  const periodRow=el("div",{style:{display:"flex",gap:"8px",marginBottom:"14px"}});
+  [{id:"week",label:"This Week"},{id:"month",label:"This Month"}].forEach(p=>{
+    periodRow.appendChild(el("button",{style:{flex:1,padding:"8px 0",borderRadius:"10px",border:`2px solid ${state.reflPeriod===p.id?"#3b0764":"#e5e7eb"}`,background:state.reflPeriod===p.id?"#3b0764":"#fff",color:state.reflPeriod===p.id?"#fff":"#666",fontSize:"13px",cursor:"pointer"},onClick:()=>set({reflPeriod:p.id})},p.label));
+  });
+  filterCard.appendChild(periodRow);
+  filterCard.appendChild(el("p",{style:{fontSize:"12px",color:"#888",margin:"0 0 8px"}},"Section"));
+  const mRow=el("div",{style:{display:"flex",gap:"8px",flexWrap:"wrap"}});
+  MS.forEach(m=>mRow.appendChild(pillBtn(state.reflM===m.key,m.color,m.light,m.accent,`${m.emoji} ${m.label}`,()=>set({reflM:m.key}))));
+  filterCard.appendChild(mRow);
+  inner.appendChild(filterCard);
 
-  // Others
-  const [othDate,  setOthDate]  = useState(today());
-  const [othText,  setOthText]  = useState("");
-  const [othTitle, setOthTitle] = useState("");
-  const [othEdit,  setOthEdit]  = useState(null);
+  const listCard=el("div",{className:"card"});
+  listCard.appendChild(el("div",{style:{display:"flex",alignItems:"center",gap:"10px",marginBottom:"16px"}},[
+    el("div",{style:{background:reflMeta.color,borderRadius:"10px",width:"38px",height:"38px",display:"flex",alignItems:"center",justifyContent:"center",fontSize:"20px"}},reflMeta.emoji),
+    el("div",null,[
+      el("p",{style:{margin:0,fontWeight:"bold",color:reflMeta.color,fontSize:"15px"}},`${reflMeta.label} Reflections`),
+      el("p",{style:{margin:0,fontSize:"12px",color:"#999"}},(state.reflPeriod==="week"?"This week":new Date().toLocaleDateString("en-SG",{month:"long",year:"numeric"}))+` · ${reflEntries.length} entr${reflEntries.length===1?"y":"ies"}`)
+    ])
+  ]));
+  if(reflEntries.length===0){listCard.appendChild(el("p",{style:{color:"#999",fontSize:"14px",fontStyle:"italic"}},`No ${reflMeta.label} reflections for this period.`));}
+  else{reflEntries.forEach((entry,i)=>{
+    const children=[];
+    if(entry.thoughts?.trim()){
+      children.push(el("div",{style:{marginBottom:entry.applications.length>0?"10px":"0"}},[
+        el("p",{style:{margin:"0 0 4px",fontSize:"11px",color:"#aaa",textTransform:"uppercase",letterSpacing:"0.5px"}},"Reflection"),
+        el("p",{style:{margin:0,fontSize:"14px",color:"#444",lineHeight:"1.7",background:reflMeta.light,borderRadius:"8px",padding:"10px 12px"}},entry.thoughts)
+      ]));
+    }
+    if(entry.applications.length>0){
+      const appWrap=el("div",null,[el("p",{style:{margin:"0 0 6px",fontSize:"11px",color:"#aaa",textTransform:"uppercase",letterSpacing:"0.5px"}},"Application Steps")]);
+      entry.applications.forEach(a=>{
+        appWrap.appendChild(el("div",{style:{display:"flex",alignItems:"center",gap:"8px",marginBottom:"5px"}},[
+          el("div",{style:{width:"16px",height:"16px",borderRadius:"4px",border:`2px solid ${reflMeta.accent}`,background:a.checked?reflMeta.accent:"#fff",display:"flex",alignItems:"center",justifyContent:"center",flexShrink:"0"}},a.checked?el("span",{style:{color:"#fff",fontSize:"10px"}},"✓"):null),
+          el("span",{style:{fontSize:"13px",color:a.checked?"#9ca3af":"#444",textDecoration:a.checked?"line-through":"none"}},a.text)
+        ]));
+      });
+      children.push(appWrap);
+    }
+    listCard.appendChild(colRow(
+      !!state.openRfl[i],()=>tog("openRfl",i),reflMeta.accent,reflMeta.light,
+      el("span",{style:{fontSize:"13px",fontWeight:"bold",color:reflMeta.color}},new Date(entry.date).toLocaleDateString("en-SG",{weekday:"long",month:"short",day:"numeric"})),
+      null,children
+    ));
+  });}
+  inner.appendChild(listCard);
+}
 
-  // Outcomes
-  const [outM,      setOutM]      = useState("mind");
-  const [outDate,   setOutDate]   = useState(today());
-  const [outText,   setOutText]   = useState("");
-  const [outFilter, setOutFilter] = useState("all");
-  const [outEdit,   setOutEdit]   = useState(null);
+function renderOutcomes(inner){
+  const outMeta=MS.find(m=>m.key===state.outM);
+  const formCard=el("div",{className:"card"});
+  formCard.appendChild(el("p",{style:{color:"#3b0764",fontWeight:"bold",fontSize:"15px",margin:"0 0 14px"}},state.outEdit!==null?"✏️ Edit Outcome":"✦ Record an Outcome"));
+  formCard.appendChild(el("p",{style:{fontSize:"12px",color:"#888",margin:"0 0 8px"}},"Which M section?"));
+  const mRow=el("div",{style:{display:"flex",gap:"8px",flexWrap:"wrap",marginBottom:"14px"}});
+  MS.forEach(m=>mRow.appendChild(pillBtn(state.outM===m.key,m.color,m.light,m.accent,`${m.emoji} ${m.label}`,()=>set({outM:m.key}))));
+  formCard.appendChild(mRow);
+  formCard.appendChild(el("p",{style:{fontSize:"12px",color:"#888",margin:"0 0 6px"}},"Date of completion"));
+  const dateInp=el("input",{type:"date",max:today(),style:{marginBottom:"14px"}},null);
+  dateInp.value=state.outDate;
+  dateInp.addEventListener("change",e=>set({outDate:e.target.value}));
+  formCard.appendChild(dateInp);
+  formCard.appendChild(el("p",{style:{fontSize:"12px",color:"#888",margin:"0 0 6px"}},"Outcome"));
+  const ta=el("textarea",{style:{border:`2px solid ${outMeta.accent}`,minHeight:"110px",resize:"vertical",marginBottom:"12px"},placeholder:"Describe what God did, what changed, or what fruit came from this..."},null);
+  ta.value=state.outText;
+  ta.addEventListener("input",e=>{ state.outText=e.target.value; });
+  formCard.appendChild(ta);
+  const btnRow=el("div",{style:{display:"flex",gap:"8px"}});
+  btnRow.appendChild(el("button",{style:{flex:1,padding:"11px 0",background:outMeta.color,color:"#fff",border:"none",borderRadius:"10px",fontSize:"14px",cursor:"pointer",fontWeight:"bold"},onClick:()=>{
+    if(!state.outText.trim())return;
+    const list=getOutcomes();
+    if(state.outEdit!==null){saveList("__outcomes",list.map(o=>o.id===state.outEdit?{...o,mKey:state.outM,date:state.outDate,text:state.outText.trim()}:o));set({outEdit:null,outText:""});}
+    else{saveList("__outcomes",[...list,{id:Date.now(),mKey:state.outM,date:state.outDate,text:state.outText.trim()}]);set({outText:""});}
+  }},state.outEdit!==null?"Save Changes":"Save Outcome"));
+  if(state.outEdit!==null){btnRow.appendChild(el("button",{style:{padding:"11px 16px",background:"#f3f4f6",color:"#666",border:"none",borderRadius:"10px",fontSize:"14px",cursor:"pointer"},onClick:()=>set({outEdit:null,outText:"",outDate:today(),outM:"mind"})},"Cancel"));}
+  formCard.appendChild(btnRow);
+  inner.appendChild(formCard);
 
-  // Resources
-  const [resUrl,    setResUrl]    = useState("");
-  const [resDesc,   setResDesc]   = useState("");
-  const [resEditId, setResEditId] = useState(null);
+  const listCard=el("div",{className:"card"});
+  const filtered=getOutcomes().filter(o=>state.outFilter==="all"||o.mKey===state.outFilter).sort((a,b)=>b.date.localeCompare(a.date));
+  listCard.appendChild(el("div",{style:{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:"12px"}},[
+    el("p",{style:{color:"#3b0764",fontWeight:"bold",fontSize:"15px",margin:0}},"Recorded Outcomes"),
+    el("span",{style:{fontSize:"12px",color:"#999"}},`${filtered.length} entr${filtered.length===1?"y":"ies"}`)
+  ]));
+  const fRow=el("div",{style:{display:"flex",gap:"6px",flexWrap:"wrap",marginBottom:"16px"}});
+  fRow.appendChild(el("button",{style:{padding:"5px 12px",borderRadius:"99px",border:`2px solid ${state.outFilter==="all"?"#3b0764":"#e5e7eb"}`,background:state.outFilter==="all"?"#3b0764":"#fff",color:state.outFilter==="all"?"#fff":"#888",fontSize:"12px",cursor:"pointer"},onClick:()=>set({outFilter:"all"})},"All"));
+  MS.forEach(m=>fRow.appendChild(el("button",{style:{padding:"5px 12px",borderRadius:"99px",border:`2px solid ${state.outFilter===m.key?m.accent:"#e5e7eb"}`,background:state.outFilter===m.key?m.light:"#fff",color:state.outFilter===m.key?m.color:"#888",fontSize:"12px",cursor:"pointer",fontWeight:state.outFilter===m.key?"bold":"normal"},onClick:()=>set({outFilter:m.key})},`${m.emoji} ${m.label}`)));
+  listCard.appendChild(fRow);
+  if(filtered.length===0){listCard.appendChild(el("p",{style:{color:"#999",fontSize:"14px",fontStyle:"italic"}},"No outcomes recorded yet."));}
+  else{filtered.forEach(o=>{
+    const m=MS.find(x=>x.key===o.mKey);
+    listCard.appendChild(colRow(
+      !!state.openOut[o.id],()=>tog("openOut",o.id),m.accent,m.light,
+      el("div",null,[el("span",{style:{fontSize:"13px",fontWeight:"bold",color:m.color}},`${m.emoji} ${m.label}`),el("span",{style:{fontSize:"11px",color:"#999",marginLeft:"8px"}},new Date(o.date).toLocaleDateString("en-SG",{day:"numeric",month:"short",year:"numeric"}))]),
+      [el("button",{style:{background:m.light,border:"none",color:m.color,borderRadius:"6px",padding:"3px 10px",fontSize:"12px",cursor:"pointer"},onClick:e=>{e.stopPropagation();set({outEdit:o.id,outM:o.mKey,outDate:o.date,outText:o.text});}
+      },"Edit"),el("button",{style:{background:"#fee2e2",border:"none",color:"#ef4444",borderRadius:"6px",padding:"3px 10px",fontSize:"12px",cursor:"pointer"},onClick:e=>{e.stopPropagation();saveList("__outcomes",getOutcomes().filter(x=>x.id!==o.id));}},"Delete")],
+      el("p",{style:{margin:0,fontSize:"14px",color:"#444",lineHeight:"1.7",background:m.light,borderRadius:"8px",padding:"10px 12px"}},o.text)
+    ));
+  });}
+  inner.appendChild(listCard);
+}
 
-  /* helpers */
-  const mut = fn => { const u=fn(data); setData(u); persist(u); };
-  const getEntry    = (mKey,date) => data[date||selDate]?.[mKey]||{thoughts:"",applications:[]};
-  const updField    = (mKey,field,val) => mut(d=>({...d,[selDate]:{...d[selDate],[mKey]:{...getEntry(mKey),[field]:val}}}));
-  const restoreData = p => { setData(p); persist(p); };
+function renderOthers(inner){
+  const formCard=el("div",{className:"card"});
+  formCard.appendChild(el("p",{style:{color:"#3b0764",fontWeight:"bold",fontSize:"15px",margin:"0 0 14px"}},state.othEdit!==null?"✏️ Edit Entry":"✦ New Entry"));
+  formCard.appendChild(el("p",{style:{fontSize:"12px",color:"#888",margin:"0 0 6px"}},"Title (optional)"));
+  const titleInp=el("input",{type:"text",placeholder:"e.g. Morning Prayer, Random Thought...",style:{marginBottom:"14px"}},null);
+  titleInp.value=state.othTitle;
+  titleInp.addEventListener("input",e=>{state.othTitle=e.target.value;});
+  formCard.appendChild(titleInp);
+  formCard.appendChild(el("p",{style:{fontSize:"12px",color:"#888",margin:"0 0 6px"}},"Date"));
+  const dateInp=el("input",{type:"date",max:today(),style:{marginBottom:"14px"}},null);
+  dateInp.value=state.othDate;
+  dateInp.addEventListener("change",e=>set({othDate:e.target.value}));
+  formCard.appendChild(dateInp);
+  formCard.appendChild(el("p",{style:{fontSize:"12px",color:"#888",margin:"0 0 6px"}},"Your thoughts or prayer"));
+  const ta=el("textarea",{style:{border:"2px solid #a855f7",minHeight:"130px",resize:"vertical",marginBottom:"12px"},placeholder:"Write freely — a prayer, a thought, something God laid on your heart..."},null);
+  ta.value=state.othText;
+  ta.addEventListener("input",e=>{state.othText=e.target.value;});
+  formCard.appendChild(ta);
+  const btnRow=el("div",{style:{display:"flex",gap:"8px"}});
+  btnRow.appendChild(el("button",{style:{flex:1,padding:"11px 0",background:"#3b0764",color:"#fff",border:"none",borderRadius:"10px",fontSize:"14px",cursor:"pointer",fontWeight:"bold"},onClick:()=>{
+    if(!state.othText.trim())return;
+    const list=getOthers();
+    if(state.othEdit!==null){saveList("__others",list.map(o=>o.id===state.othEdit?{...o,date:state.othDate,title:state.othTitle.trim(),text:state.othText.trim()}:o));set({othEdit:null,othText:"",othTitle:"",othDate:today()});}
+    else{saveList("__others",[...list,{id:Date.now(),date:state.othDate,title:state.othTitle.trim(),text:state.othText.trim()}]);set({othText:"",othTitle:"",othDate:today()});}
+  }},state.othEdit!==null?"Save Changes":"Save Entry"));
+  if(state.othEdit!==null){btnRow.appendChild(el("button",{style:{padding:"11px 16px",background:"#f3f4f6",color:"#666",border:"none",borderRadius:"10px",fontSize:"14px",cursor:"pointer"},onClick:()=>set({othEdit:null,othText:"",othTitle:"",othDate:today()})},"Cancel"));}
+  formCard.appendChild(btnRow);
+  inner.appendChild(formCard);
 
-  const getOthers   = () => data.__others||[];
-  const getOutcomes = () => data.__outcomes||[];
-  const getResources= () => data.__resources||[];
+  const listCard=el("div",{className:"card"});
+  const sorted=getOthers().slice().sort((a,b)=>b.date.localeCompare(a.date));
+  listCard.appendChild(el("div",{style:{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:"16px"}},[
+    el("p",{style:{color:"#3b0764",fontWeight:"bold",fontSize:"15px",margin:0}},"All Entries"),
+    el("span",{style:{fontSize:"12px",color:"#999"}},`${sorted.length} entr${sorted.length===1?"y":"ies"}`)
+  ]));
+  if(sorted.length===0){listCard.appendChild(el("p",{style:{color:"#999",fontSize:"14px",fontStyle:"italic"}},"No entries yet. Start by adding one above!"));}
+  else{sorted.forEach(o=>{
+    listCard.appendChild(colRow(
+      !!state.openOth[o.id],()=>tog("openOth",o.id),"#a855f7","#f3e8ff",
+      el("div",null,[o.title?el("p",{style:{margin:"0 0 2px",fontSize:"13px",fontWeight:"bold",color:"#3b0764"}},o.title):null,el("p",{style:{margin:0,fontSize:"11px",color:"#999"}},new Date(o.date).toLocaleDateString("en-SG",{weekday:"short",day:"numeric",month:"short",year:"numeric"}))]),
+      [el("button",{style:{background:"#f3e8ff",border:"none",color:"#3b0764",borderRadius:"6px",padding:"3px 10px",fontSize:"12px",cursor:"pointer"},onClick:e=>{e.stopPropagation();set({othEdit:o.id,othDate:o.date,othTitle:o.title||"",othText:o.text,sumTab:"others"});}},"Edit"),el("button",{style:{background:"#fee2e2",border:"none",color:"#ef4444",borderRadius:"6px",padding:"3px 10px",fontSize:"12px",cursor:"pointer"},onClick:e=>{e.stopPropagation();saveList("__others",getOthers().filter(x=>x.id!==o.id));}},"Delete")],
+      el("p",{style:{margin:0,fontSize:"14px",color:"#444",lineHeight:"1.8",background:"#f3e8ff",borderRadius:"8px",padding:"10px 12px",whiteSpace:"pre-wrap"}},o.text)
+    ));
+  });}
+  inner.appendChild(listCard);
+}
 
-  const saveOthers   = list => mut(d=>({...d,__others:list}));
-  const saveOutcomes = list => mut(d=>({...d,__outcomes:list}));
-  const saveResources= list => mut(d=>({...d,__resources:list}));
+function renderResources(){
+  const resources=getResources();
+  const wrap=el("div",{style:{minHeight:"100vh",background:"#f0fdf4"}});
+  wrap.appendChild(el("div",{style:{background:"#14532d",color:"#fff",padding:"20px 16px 16px"}},[
+    backBtn("← Back",()=>set({view:"home"})),
+    el("h2",{style:{margin:0,fontSize:"22px"}},"📺 Resources"),
+    el("p",{style:{margin:"4px 0 0",opacity:"0.8",fontSize:"13px"}},"Your faith video library")
+  ]));
+  const inner=el("div",{style:{padding:"16px",maxWidth:"600px",margin:"0 auto"}});
+  inner.appendChild(el("div",{style:{background:"#fef9c3",border:"1px solid #ca8a04",borderRadius:"12px",padding:"10px 14px",marginBottom:"16px",fontSize:"13px",color:"#713f12",lineHeight:"1.6"}},
+    "💡 Tip: Tap ▶ New Tab to open YouTube in a new Safari tab — then switch back here and audio keeps playing!"));
 
-  /* Others CRUD */
-  const addOther = () => {
-    if(!othText.trim())return;
-    if(othEdit!==null){ saveOthers(getOthers().map(o=>o.id===othEdit?{...o,date:othDate,title:othTitle.trim(),text:othText.trim()}:o)); setOthEdit(null); }
-    else saveOthers([...getOthers(),{id:Date.now(),date:othDate,title:othTitle.trim(),text:othText.trim()}]);
-    setOthText(""); setOthTitle(""); setOthDate(today());
-  };
-  const startEditOther  = o => { setOthDate(o.date); setOthTitle(o.title||""); setOthText(o.text); setOthEdit(o.id); setSumTab("others"); };
-  const cancelEditOther = () => { setOthEdit(null); setOthText(""); setOthTitle(""); setOthDate(today()); };
-
-  /* Outcomes CRUD */
-  const addOutcome = () => {
-    if(!outText.trim())return;
-    if(outEdit!==null){ saveOutcomes(getOutcomes().map(o=>o.id===outEdit?{...o,mKey:outM,date:outDate,text:outText.trim()}:o)); setOutEdit(null); }
-    else saveOutcomes([...getOutcomes(),{id:Date.now(),mKey:outM,date:outDate,text:outText.trim()}]);
-    setOutText(""); setOutDate(today()); setOutM("mind");
-  };
-  const startEditOut  = o => { setOutM(o.mKey); setOutDate(o.date); setOutText(o.text); setOutEdit(o.id); };
-  const cancelEditOut = () => { setOutEdit(null); setOutText(""); setOutDate(today()); setOutM("mind"); };
-
-  /* Resources CRUD */
-  const extractVid = url => { const m=url.match(/(?:youtu\.be\/|v=|\/embed\/|\/shorts\/)([A-Za-z0-9_-]{11})/); return m?m[1]:null; };
-  const addResource = () => {
-    const vid=extractVid(resUrl.trim());
-    if(!vid){ alert("Please enter a valid YouTube URL."); return; }
+  // Form
+  const resMeta=state.resEditId!==null?"✏️ Edit Resource":"✦ Add YouTube Video";
+  const formCard=el("div",{className:"card"});
+  formCard.appendChild(el("p",{style:{color:"#14532d",fontWeight:"bold",fontSize:"15px",margin:"0 0 14px"}},resMeta));
+  formCard.appendChild(el("p",{style:{fontSize:"12px",color:"#888",margin:"0 0 6px"}},"YouTube URL"));
+  const urlInp=el("input",{type:"url",placeholder:"https://www.youtube.com/watch?v=...",style:{border:"2px solid #22c55e",marginBottom:"12px"}},null);
+  urlInp.value=state.resUrl;
+  urlInp.addEventListener("input",e=>{state.resUrl=e.target.value;});
+  formCard.appendChild(urlInp);
+  formCard.appendChild(el("p",{style:{fontSize:"12px",color:"#888",margin:"0 0 6px"}},"Short description"));
+  const descTA=el("textarea",{style:{border:"2px solid #22c55e",minHeight:"70px",resize:"vertical",marginBottom:"12px"},placeholder:"e.g. Sunday sermon on grace, Worship set by Hillsong..."},null);
+  descTA.value=state.resDesc;
+  descTA.addEventListener("input",e=>{state.resDesc=e.target.value;});
+  formCard.appendChild(descTA);
+  const resBtnRow=el("div",{style:{display:"flex",gap:"8px"}});
+  resBtnRow.appendChild(el("button",{style:{flex:1,padding:"11px 0",background:"#14532d",color:"#fff",border:"none",borderRadius:"10px",fontSize:"14px",cursor:"pointer",fontWeight:"bold"},onClick:()=>{
+    const vid=extractVid(state.resUrl.trim());
+    if(!vid){alert("Please enter a valid YouTube URL.");return;}
     const list=getResources();
-    if(resEditId!==null){ saveResources(list.map(r=>r.id===resEditId?{...r,url:resUrl.trim(),vid,desc:resDesc.trim()}:r)); setResEditId(null); }
-    else saveResources([...list,{id:Date.now(),url:resUrl.trim(),vid,desc:resDesc.trim()}]);
-    setResUrl(""); setResDesc("");
-  };
-  const startEditRes  = r => { setResUrl(r.url); setResDesc(r.desc); setResEditId(r.id); };
-  const cancelEditRes = () => { setResUrl(""); setResDesc(""); setResEditId(null); };
+    if(state.resEditId!==null){saveList("__resources",list.map(r=>r.id===state.resEditId?{...r,url:state.resUrl.trim(),vid,desc:state.resDesc.trim()}:r));set({resEditId:null,resUrl:"",resDesc:""});}
+    else{saveList("__resources",[...list,{id:Date.now(),url:state.resUrl.trim(),vid,desc:state.resDesc.trim()}]);set({resUrl:"",resDesc:""});}
+  }},state.resEditId!==null?"Save Changes":"Add Video"));
+  if(state.resEditId!==null){resBtnRow.appendChild(el("button",{style:{padding:"11px 16px",background:"#f3f4f6",color:"#666",border:"none",borderRadius:"10px",fontSize:"14px",cursor:"pointer"},onClick:()=>set({resEditId:null,resUrl:"",resDesc:""})},"Cancel"));}
+  formCard.appendChild(resBtnRow);
+  inner.appendChild(formCard);
 
-  /* Derived */
-  const completedToday = MS.filter(m=>{ const e=getEntry(m.key); return e.thoughts?.trim()||e.applications?.length>0; }).length;
-  const weekDates      = getWeekDates();
-  const weekProgress   = weekDates.map(d=>({ date:d, label:new Date(d).toLocaleDateString("en-SG",{weekday:"short"}), count:MS.filter(m=>{ const e=data[d]?.[m.key]; return e?.thoughts?.trim()||e?.applications?.length>0; }).length }));
-  const weekApps       = weekDates.flatMap(d=>MS.map(m=>{ const apps=data[d]?.[m.key]?.applications||[]; return apps.length>0?{date:d,m,apps}:null; }).filter(Boolean));
-  const reflDates      = reflPeriod==="week"?getWeekDates():getMonthDates();
-  const reflMeta       = MS.find(x=>x.key===reflM);
-  const reflEntries    = reflDates.map(d=>{ const e=data[d]?.[reflM]; if(!e?.thoughts?.trim()&&!e?.applications?.length)return null; return{date:d,thoughts:e.thoughts||"",applications:e.applications||[]}; }).filter(Boolean);
-  const filteredOut    = getOutcomes().filter(o=>outFilter==="all"||o.mKey===outFilter).sort((a,b)=>b.date.localeCompare(a.date));
-  const sortedOthers   = getOthers().slice().sort((a,b)=>b.date.localeCompare(a.date));
-
-  const isToday = selDate===today();
-
-  /* ── Btn styles ── */
-  const pill = (active,color,light,accent) => ({ padding:"7px 14px",borderRadius:99,border:`2px solid ${active?accent:"#e5e7eb"}`,background:active?light:"#fff",color:active?color:"#888",fontSize:13,cursor:"pointer",fontWeight:active?"bold":"normal" });
-
-  /* ════════════════════════ RESOURCES VIEW ════════════════════════ */
-  if(view==="resources"){
-    const resources=getResources();
-    return (
-      <div style={{minHeight:"100vh",background:"#f0fdf4"}}>
-        <div style={{background:"#14532d",color:"#fff",padding:"20px 16px 16px"}}>
-          <button onClick={()=>setView("home")} style={{background:"rgba(255,255,255,0.2)",border:"none",color:"#fff",borderRadius:8,padding:"6px 14px",cursor:"pointer",marginBottom:12,fontSize:14}}>← Back</button>
-          <h2 style={{margin:0,fontSize:22}}>📺 Resources</h2>
-          <p style={{margin:"4px 0 0",opacity:0.8,fontSize:13}}>Your faith video library</p>
-        </div>
-        <div style={{padding:16,maxWidth:600,margin:"0 auto"}}>
-          <div style={{background:"#fef9c3",border:"1px solid #ca8a04",borderRadius:12,padding:"10px 14px",marginBottom:16,fontSize:13,color:"#713f12",lineHeight:1.6}}>
-            💡 <strong>Tip:</strong> Tap <strong>▶ New Tab</strong> to open YouTube in a new Safari tab — then switch back here and audio keeps playing! Use <strong>▶ Open</strong> to open in the same tab.
-          </div>
-          {/* Form */}
-          <div style={{background:"#fff",borderRadius:14,padding:18,marginBottom:16,boxShadow:"0 2px 8px rgba(0,0,0,0.07)"}}>
-            <p style={{color:"#14532d",fontWeight:"bold",fontSize:15,margin:"0 0 14px"}}>{resEditId!==null?"✏️ Edit Resource":"✦ Add YouTube Video"}</p>
-            <p style={{fontSize:12,color:"#888",margin:"0 0 6px"}}>YouTube URL</p>
-            <input value={resUrl} onChange={e=>setResUrl(e.target.value)} placeholder="https://www.youtube.com/watch?v=..." style={{width:"100%",border:"2px solid #22c55e",borderRadius:10,padding:"9px 12px",fontSize:14,outline:"none",color:"#333",boxSizing:"border-box",marginBottom:12}}/>
-            <p style={{fontSize:12,color:"#888",margin:"0 0 6px"}}>Short description</p>
-            <textarea value={resDesc} onChange={e=>setResDesc(e.target.value)} placeholder="e.g. Sunday sermon on grace, Worship set by Hillsong..." style={{width:"100%",minHeight:70,border:"2px solid #22c55e",borderRadius:10,padding:"9px 12px",fontSize:14,resize:"vertical",boxSizing:"border-box",outline:"none",color:"#333",marginBottom:12}}/>
-            <div style={{display:"flex",gap:8}}>
-              <button onClick={addResource} disabled={!resUrl.trim()} style={{flex:1,padding:"11px 0",background:resUrl.trim()?"#14532d":"#e5e7eb",color:resUrl.trim()?"#fff":"#aaa",border:"none",borderRadius:10,fontSize:14,cursor:resUrl.trim()?"pointer":"default",fontWeight:"bold"}}>{resEditId!==null?"Save Changes":"Add Video"}</button>
-              {resEditId!==null&&<button onClick={cancelEditRes} style={{padding:"11px 16px",background:"#f3f4f6",color:"#666",border:"none",borderRadius:10,fontSize:14,cursor:"pointer"}}>Cancel</button>}
-            </div>
-          </div>
-          {/* List */}
-          {resources.length===0
-            ?<div style={{textAlign:"center",padding:"40px 0",color:"#999"}}><p style={{fontSize:32,marginBottom:8}}>📺</p><p style={{fontSize:14,fontStyle:"italic"}}>No videos yet. Add a YouTube link above!</p></div>
-            :resources.map((r,idx)=>(
-              <div key={r.id} style={{background:"#fff",borderRadius:14,marginBottom:12,overflow:"hidden",boxShadow:"0 2px 8px rgba(0,0,0,0.07)",border:"2px solid #e5e7eb"}}>
-                <div style={{display:"flex",gap:12,padding:"14px 14px 10px",alignItems:"center"}}>
-                  <div style={{flexShrink:0,width:52,height:52,borderRadius:12,background:"#dcfce7",display:"flex",alignItems:"center",justifyContent:"center"}}>
-                    <span style={{fontSize:26}}>▶️</span>
-                  </div>
-                  <div style={{flex:1,minWidth:0}}>
-                    <p style={{margin:"0 0 4px",fontSize:14,color:"#333",fontWeight:"bold",lineHeight:1.4}}>{r.desc||"Untitled video"}</p>
-                    <p style={{margin:0,fontSize:11,color:"#86efac",overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{r.url}</p>
-                  </div>
-                </div>
-                <div style={{display:"flex",borderTop:"1px solid #f0fdf4"}}>
-                  <a href={r.url} style={{flex:1,padding:"11px 0",background:"#14532d",color:"#fff",fontSize:12,fontWeight:"bold",textAlign:"center",display:"block"}}>▶ Open</a>
-                  <div style={{width:1,background:"#166534"}}/>
-                  <a href={r.url} target="_blank" rel="noopener noreferrer" style={{flex:1,padding:"11px 0",background:"#166534",color:"#fff",fontSize:12,fontWeight:"bold",textAlign:"center",display:"block"}}>▶ New Tab</a>
-                  <div style={{width:1,background:"#e5e7eb"}}/>
-                  <button onClick={()=>startEditRes(r)} style={{flex:1,padding:"11px 0",background:"#f0fdf4",color:"#14532d",border:"none",fontSize:12,cursor:"pointer"}}>Edit</button>
-                  <div style={{width:1,background:"#e5e7eb"}}/>
-                  <button onClick={()=>saveResources(resources.filter(x=>x.id!==r.id))} style={{flex:1,padding:"11px 0",background:"#f0fdf4",color:"#ef4444",border:"none",fontSize:12,cursor:"pointer"}}>Delete</button>
-                </div>
-              </div>
-            ))
-          }
-        </div>
-      </div>
-    );
+  if(resources.length===0){
+    inner.appendChild(el("div",{style:{textAlign:"center",padding:"40px 0",color:"#999"}},[el("p",{style:{fontSize:"32px",marginBottom:"8px"}},"📺"),el("p",{style:{fontSize:"14px",fontStyle:"italic"}},"No videos yet. Add a YouTube link above!")]));
+  } else {
+    resources.forEach(r=>{
+      const card=el("div",{style:{background:"#fff",borderRadius:"14px",marginBottom:"12px",overflow:"hidden",boxShadow:"0 2px 8px rgba(0,0,0,0.07)",border:"2px solid #e5e7eb"}});
+      card.appendChild(el("div",{style:{display:"flex",gap:"12px",padding:"14px 14px 10px",alignItems:"center"}},[
+        el("div",{style:{flexShrink:"0",width:"52px",height:"52px",borderRadius:"12px",background:"#dcfce7",display:"flex",alignItems:"center",justifyContent:"center",fontSize:"26px"}},"▶️"),
+        el("div",{style:{flex:1,minWidth:0}},[
+          el("p",{style:{margin:"0 0 4px",fontSize:"14px",color:"#333",fontWeight:"bold",lineHeight:"1.4"}},r.desc||"Untitled video"),
+          el("p",{style:{margin:0,fontSize:"11px",color:"#86efac",overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}},r.url)
+        ])
+      ]));
+      const btnBar=el("div",{style:{display:"flex",borderTop:"1px solid #f0fdf4"}});
+      const openA=el("a",{href:r.url,style:{flex:1,padding:"11px 0",background:"#14532d",color:"#fff",fontSize:"12px",fontWeight:"bold",textAlign:"center",display:"block"}},"▶ Open");
+      const newTabA=el("a",{href:r.url,target:"_blank",rel:"noopener noreferrer",style:{flex:1,padding:"11px 0",background:"#166534",color:"#fff",fontSize:"12px",fontWeight:"bold",textAlign:"center",display:"block"}},"▶ New Tab");
+      const editBtn=el("button",{style:{flex:1,padding:"11px 0",background:"#f0fdf4",color:"#14532d",border:"none",fontSize:"12px",cursor:"pointer"},onClick:()=>set({resEditId:r.id,resUrl:r.url,resDesc:r.desc})},"Edit");
+      const delBtn=el("button",{style:{flex:1,padding:"11px 0",background:"#f0fdf4",color:"#ef4444",border:"none",fontSize:"12px",cursor:"pointer"},onClick:()=>saveList("__resources",resources.filter(x=>x.id!==r.id))},"Delete");
+      const div1=el("div",{style:{width:"1px",background:"#166534"}},null);
+      const div2=el("div",{style:{width:"1px",background:"#e5e7eb"}},null);
+      const div3=el("div",{style:{width:"1px",background:"#e5e7eb"}},null);
+      btnBar.appendChild(openA);btnBar.appendChild(div1);btnBar.appendChild(newTabA);btnBar.appendChild(div2);btnBar.appendChild(editBtn);btnBar.appendChild(div3);btnBar.appendChild(delBtn);
+      card.appendChild(btnBar);
+      inner.appendChild(card);
+    });
   }
-
-  /* ════════════════════════ DETAIL VIEW ════════════════════════ */
-  if(view==="detail"&&activeM){
-    const m=MS.find(x=>x.key===activeM), entry=getEntry(m.key);
-    return (
-      <div style={{minHeight:"100vh",background:m.light}}>
-        <div style={{background:m.color,color:"#fff",padding:"20px 16px 16px"}}>
-          <button onClick={()=>setView("home")} style={{background:"rgba(255,255,255,0.2)",border:"none",color:"#fff",borderRadius:8,padding:"6px 14px",cursor:"pointer",marginBottom:12,fontSize:14}}>← Back</button>
-          <div style={{fontSize:36}}>{m.emoji}</div>
-          <h2 style={{margin:"4px 0 0",fontSize:24}}>{m.label}</h2>
-          <p style={{margin:"4px 0 0",opacity:0.85,fontSize:13}}>{selDate}</p>
-        </div>
-        <div style={{padding:16,maxWidth:600,margin:"0 auto"}}>
-          <div style={{background:"#fff",borderRadius:14,padding:18,marginBottom:16,boxShadow:"0 2px 8px rgba(0,0,0,0.07)"}}>
-            <p style={{color:m.color,fontWeight:"bold",fontSize:14,marginBottom:8}}>✦ Today's Reflection</p>
-            <p style={{color:"#444",fontSize:14,lineHeight:1.6,margin:"0 0 12px"}}>{m.prompt}</p>
-            <textarea value={entry.thoughts} onChange={e=>updField(m.key,"thoughts",e.target.value)} placeholder="Write your thoughts here..." style={{width:"100%",minHeight:120,border:`2px solid ${m.accent}`,borderRadius:10,padding:12,fontSize:14,resize:"vertical",boxSizing:"border-box",outline:"none",color:"#333"}}/>
-          </div>
-          <div style={{background:"#fff",borderRadius:14,padding:18,boxShadow:"0 2px 8px rgba(0,0,0,0.07)"}}>
-            <p style={{color:m.color,fontWeight:"bold",fontSize:14,marginBottom:4}}>✦ Application Steps</p>
-            <p style={{color:"#888",fontSize:13,lineHeight:1.5,margin:"0 0 14px"}}>{m.appPrompt}</p>
-            <CheckboxList items={entry.applications||[]} onChange={val=>updField(m.key,"applications",val)} accent={m.accent} light={m.light}/>
-          </div>
-        </div>
-      </div>
-    );
-  }
-
-  /* ════════════════════════ PROGRESS VIEW ════════════════════════ */
-  if(view==="progress"){
-    const tabs=[{id:"overview",label:"Overview"},{id:"reflections",label:"Reflections"},{id:"outcomes",label:"Outcomes"},{id:"others",label:"Others"}];
-    /* small reusable row */
-    const ColRow = ({isOpen,onToggle,left,right,accent,bg,children}) => (
-      <div style={{borderRadius:10,border:"1px solid #e5e7eb",marginBottom:10,overflow:"hidden"}}>
-        <div onClick={onToggle} style={{display:"flex",justifyContent:"space-between",alignItems:"center",padding:"10px 14px",background:isOpen?bg:"#f9fafb",cursor:"pointer"}}>
-          <div style={{flex:1,minWidth:0}}>{left}</div>
-          <div style={{display:"flex",gap:6,alignItems:"center",flexShrink:0}}>{right}<span style={{color:"#aaa",fontSize:14}}>{isOpen?"▲":"▼"}</span></div>
-        </div>
-        {isOpen&&<div style={{padding:"12px 14px",borderTop:`2px solid ${accent}`}}>{children}</div>}
-      </div>
-    );
-    return (
-      <div style={{minHeight:"100vh",background:"#f8f5ff"}}>
-        <div style={{background:"#3b0764",color:"#fff",padding:"20px 16px 0"}}>
-          <button onClick={()=>setView("home")} style={{background:"rgba(255,255,255,0.2)",border:"none",color:"#fff",borderRadius:8,padding:"6px 14px",cursor:"pointer",marginBottom:12,fontSize:14}}>← Back</button>
-          <h2 style={{margin:0,fontSize:22}}>📊 Progress</h2>
-          <p style={{margin:"4px 0 16px",opacity:0.8,fontSize:13}}>Your faith journey overview</p>
-          <div style={{display:"flex",gap:4,overflowX:"auto"}}>
-            {tabs.map(t=><button key={t.id} onClick={()=>setSumTab(t.id)} style={{padding:"10px 16px",background:sumTab===t.id?"#fff":"transparent",color:sumTab===t.id?"#3b0764":"rgba(255,255,255,0.75)",border:"none",borderRadius:"10px 10px 0 0",cursor:"pointer",fontSize:13,fontWeight:sumTab===t.id?"bold":"normal",whiteSpace:"nowrap"}}>{t.label}</button>)}
-          </div>
-        </div>
-        <div style={{padding:16,maxWidth:600,margin:"0 auto"}}>
-
-          {/* ── OVERVIEW ── */}
-          {sumTab==="overview"&&<>
-            <BackupRestore data={data} onRestore={restoreData}/>
-            <div style={{background:"#fff",borderRadius:14,padding:18,marginBottom:16,boxShadow:"0 2px 8px rgba(0,0,0,0.07)"}}>
-              <p style={{color:"#3b0764",fontWeight:"bold",fontSize:15,margin:"0 0 14px"}}>Daily Completion</p>
-              <div style={{display:"flex",gap:8,justifyContent:"space-between"}}>
-                {weekProgress.map(d=><div key={d.date} style={{flex:1,textAlign:"center"}}>
-                  <div style={{height:80,background:"#f3e8ff",borderRadius:8,display:"flex",alignItems:"flex-end",overflow:"hidden"}}>
-                    <div style={{width:"100%",height:`${(d.count/5)*100}%`,background:"#a855f7",borderRadius:"8px 8px 0 0"}}/>
-                  </div>
-                  <p style={{fontSize:11,color:"#666",margin:"4px 0 0"}}>{d.label}</p>
-                  <p style={{fontSize:12,color:"#a855f7",margin:0,fontWeight:"bold"}}>{d.count}/5</p>
-                </div>)}
-              </div>
-            </div>
-            <div style={{background:"#fff",borderRadius:14,padding:18,marginBottom:16,boxShadow:"0 2px 8px rgba(0,0,0,0.07)"}}>
-              <p style={{color:"#3b0764",fontWeight:"bold",fontSize:15,margin:"0 0 14px"}}>Progress by Section</p>
-              {MS.map(m=>{ const c=weekDates.filter(d=>{ const e=data[d]?.[m.key]; return e?.thoughts?.trim()||e?.applications?.length>0; }).length; return(
-                <div key={m.key} style={{marginBottom:12}}>
-                  <div style={{display:"flex",justifyContent:"space-between",marginBottom:4}}>
-                    <span style={{fontSize:14,color:m.color,fontWeight:"bold"}}>{m.emoji} {m.label}</span>
-                    <span style={{fontSize:13,color:"#666"}}>{c}/7 days</span>
-                  </div>
-                  <div style={{background:m.light,borderRadius:99,height:10}}>
-                    <div style={{width:`${(c/7)*100}%`,background:m.accent,height:10,borderRadius:99}}/>
-                  </div>
-                </div>
-              );})}
-            </div>
-            <div style={{background:"#fff",borderRadius:14,padding:18,boxShadow:"0 2px 8px rgba(0,0,0,0.07)"}}>
-              <p style={{color:"#3b0764",fontWeight:"bold",fontSize:15,margin:"0 0 14px"}}>✦ Applications This Week</p>
-              {weekApps.length===0?<p style={{color:"#999",fontSize:14,fontStyle:"italic"}}>No applications recorded yet this week.</p>
-              :weekApps.map((item,i)=>(
-                <ColRow key={i} isOpen={!!openWA[i]} onToggle={()=>tog(setOpenWA,i)} accent={item.m.accent} bg={item.m.light}
-                  left={<div style={{display:"flex",gap:8,alignItems:"center",flexWrap:"wrap"}}>
-                    <span style={{fontSize:13,fontWeight:"bold",color:item.m.color}}>{item.m.emoji} {item.m.label}</span>
-                    <span style={{fontSize:11,color:"#999"}}>{new Date(item.date).toLocaleDateString("en-SG",{weekday:"short",month:"short",day:"numeric"})}</span>
-                    <span style={{fontSize:11,background:item.m.light,color:item.m.color,borderRadius:99,padding:"2px 8px"}}>{item.apps.filter(a=>a.checked).length}/{item.apps.length} done</span>
-                  </div>}>
-                  {item.apps.map(a=><div key={a.id} style={{display:"flex",alignItems:"center",gap:8,marginBottom:5}}>
-                    <div style={{width:16,height:16,borderRadius:4,border:`2px solid ${item.m.accent}`,background:a.checked?item.m.accent:"#fff",display:"flex",alignItems:"center",justifyContent:"center",flexShrink:0}}>{a.checked&&<span style={{color:"#fff",fontSize:10}}>✓</span>}</div>
-                    <span style={{fontSize:13,color:a.checked?"#9ca3af":"#444",textDecoration:a.checked?"line-through":"none"}}>{a.text}</span>
-                  </div>)}
-                </ColRow>
-              ))}
-            </div>
-          </>}
-
-          {/* ── REFLECTIONS ── */}
-          {sumTab==="reflections"&&<>
-            <div style={{background:"#fff",borderRadius:14,padding:16,marginBottom:16,boxShadow:"0 2px 8px rgba(0,0,0,0.07)"}}>
-              <p style={{color:"#3b0764",fontWeight:"bold",fontSize:14,margin:"0 0 12px"}}>Filter Reflections</p>
-              <p style={{fontSize:12,color:"#888",margin:"0 0 6px"}}>Period</p>
-              <div style={{display:"flex",gap:8,marginBottom:14}}>
-                {[{id:"week",label:"This Week"},{id:"month",label:"This Month"}].map(p=><button key={p.id} onClick={()=>setReflPeriod(p.id)} style={{flex:1,padding:"8px 0",borderRadius:10,border:`2px solid ${reflPeriod===p.id?"#3b0764":"#e5e7eb"}`,background:reflPeriod===p.id?"#3b0764":"#fff",color:reflPeriod===p.id?"#fff":"#666",fontSize:13,cursor:"pointer"}}>{p.label}</button>)}
-              </div>
-              <p style={{fontSize:12,color:"#888",margin:"0 0 8px"}}>Section</p>
-              <div style={{display:"flex",gap:8,flexWrap:"wrap"}}>
-                {MS.map(m=><button key={m.key} onClick={()=>setReflM(m.key)} style={pill(reflM===m.key,m.color,m.light,m.accent)}>{m.emoji} {m.label}</button>)}
-              </div>
-            </div>
-            <div style={{background:"#fff",borderRadius:14,padding:18,boxShadow:"0 2px 8px rgba(0,0,0,0.07)"}}>
-              <div style={{display:"flex",alignItems:"center",gap:10,marginBottom:16}}>
-                <div style={{background:reflMeta.color,borderRadius:10,width:38,height:38,display:"flex",alignItems:"center",justifyContent:"center",fontSize:20}}>{reflMeta.emoji}</div>
-                <div>
-                  <p style={{margin:0,fontWeight:"bold",color:reflMeta.color,fontSize:15}}>{reflMeta.label} Reflections</p>
-                  <p style={{margin:0,fontSize:12,color:"#999"}}>{reflPeriod==="week"?"This week":new Date().toLocaleDateString("en-SG",{month:"long",year:"numeric"})} · {reflEntries.length} entr{reflEntries.length===1?"y":"ies"}</p>
-                </div>
-              </div>
-              {reflEntries.length===0?<p style={{color:"#999",fontSize:14,fontStyle:"italic"}}>No {reflMeta.label} reflections for this period.</p>
-              :reflEntries.map((entry,i)=>(
-                <ColRow key={i} isOpen={!!openRfl[i]} onToggle={()=>tog(setOpenRfl,i)} accent={reflMeta.accent} bg={reflMeta.light}
-                  left={<span style={{fontSize:13,fontWeight:"bold",color:reflMeta.color}}>{new Date(entry.date).toLocaleDateString("en-SG",{weekday:"long",month:"short",day:"numeric"})}</span>}>
-                  {entry.thoughts?.trim()&&<div style={{marginBottom:entry.applications.length>0?10:0}}>
-                    <p style={{margin:"0 0 4px",fontSize:11,color:"#aaa",textTransform:"uppercase",letterSpacing:0.5}}>Reflection</p>
-                    <p style={{margin:0,fontSize:14,color:"#444",lineHeight:1.7,background:reflMeta.light,borderRadius:8,padding:"10px 12px"}}>{entry.thoughts}</p>
-                  </div>}
-                  {entry.applications.length>0&&<div>
-                    <p style={{margin:"0 0 6px",fontSize:11,color:"#aaa",textTransform:"uppercase",letterSpacing:0.5}}>Application Steps</p>
-                    {entry.applications.map(a=><div key={a.id} style={{display:"flex",alignItems:"center",gap:8,marginBottom:5}}>
-                      <div style={{width:16,height:16,borderRadius:4,border:`2px solid ${reflMeta.accent}`,background:a.checked?reflMeta.accent:"#fff",display:"flex",alignItems:"center",justifyContent:"center",flexShrink:0}}>{a.checked&&<span style={{color:"#fff",fontSize:10}}>✓</span>}</div>
-                      <span style={{fontSize:13,color:a.checked?"#9ca3af":"#444",textDecoration:a.checked?"line-through":"none"}}>{a.text}</span>
-                    </div>)}
-                  </div>}
-                </ColRow>
-              ))}
-            </div>
-          </>}
-
-          {/* ── OUTCOMES ── */}
-          {sumTab==="outcomes"&&<>
-            <div style={{background:"#fff",borderRadius:14,padding:18,marginBottom:16,boxShadow:"0 2px 8px rgba(0,0,0,0.07)"}}>
-              <p style={{color:"#3b0764",fontWeight:"bold",fontSize:15,margin:"0 0 14px"}}>{outEdit!==null?"✏️ Edit Outcome":"✦ Record an Outcome"}</p>
-              <p style={{fontSize:12,color:"#888",margin:"0 0 8px"}}>Which M section?</p>
-              <div style={{display:"flex",gap:8,flexWrap:"wrap",marginBottom:14}}>
-                {MS.map(m=><button key={m.key} onClick={()=>setOutM(m.key)} style={pill(outM===m.key,m.color,m.light,m.accent)}>{m.emoji} {m.label}</button>)}
-              </div>
-              <p style={{fontSize:12,color:"#888",margin:"0 0 6px"}}>Date of completion</p>
-              <input type="date" value={outDate} max={today()} onChange={e=>setOutDate(e.target.value)} style={{width:"100%",border:"2px solid #e5e7eb",borderRadius:10,padding:"9px 12px",fontSize:14,outline:"none",color:"#333",marginBottom:14}}/>
-              <p style={{fontSize:12,color:"#888",margin:"0 0 6px"}}>Outcome</p>
-              <textarea value={outText} onChange={e=>setOutText(e.target.value)} placeholder="Describe what God did, what changed, or what fruit came from this..." style={{width:"100%",minHeight:110,border:`2px solid ${MS.find(m=>m.key===outM).accent}`,borderRadius:10,padding:12,fontSize:14,resize:"vertical",boxSizing:"border-box",outline:"none",color:"#333",marginBottom:12}}/>
-              <div style={{display:"flex",gap:8}}>
-                <button onClick={addOutcome} disabled={!outText.trim()} style={{flex:1,padding:"11px 0",background:outText.trim()?MS.find(m=>m.key===outM).color:"#e5e7eb",color:outText.trim()?"#fff":"#aaa",border:"none",borderRadius:10,fontSize:14,cursor:outText.trim()?"pointer":"default",fontWeight:"bold"}}>{outEdit!==null?"Save Changes":"Save Outcome"}</button>
-                {outEdit!==null&&<button onClick={cancelEditOut} style={{padding:"11px 16px",background:"#f3f4f6",color:"#666",border:"none",borderRadius:10,fontSize:14,cursor:"pointer"}}>Cancel</button>}
-              </div>
-            </div>
-            <div style={{background:"#fff",borderRadius:14,padding:18,boxShadow:"0 2px 8px rgba(0,0,0,0.07)"}}>
-              <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:12}}>
-                <p style={{color:"#3b0764",fontWeight:"bold",fontSize:15,margin:0}}>Recorded Outcomes</p>
-                <span style={{fontSize:12,color:"#999"}}>{filteredOut.length} entr{filteredOut.length===1?"y":"ies"}</span>
-              </div>
-              <div style={{display:"flex",gap:6,flexWrap:"wrap",marginBottom:16}}>
-                <button onClick={()=>setOutFilter("all")} style={{padding:"5px 12px",borderRadius:99,border:`2px solid ${outFilter==="all"?"#3b0764":"#e5e7eb"}`,background:outFilter==="all"?"#3b0764":"#fff",color:outFilter==="all"?"#fff":"#888",fontSize:12,cursor:"pointer"}}>All</button>
-                {MS.map(m=><button key={m.key} onClick={()=>setOutFilter(m.key)} style={{padding:"5px 12px",borderRadius:99,border:`2px solid ${outFilter===m.key?m.accent:"#e5e7eb"}`,background:outFilter===m.key?m.light:"#fff",color:outFilter===m.key?m.color:"#888",fontSize:12,cursor:"pointer",fontWeight:outFilter===m.key?"bold":"normal"}}>{m.emoji} {m.label}</button>)}
-              </div>
-              {filteredOut.length===0?<p style={{color:"#999",fontSize:14,fontStyle:"italic"}}>No outcomes recorded yet.</p>
-              :filteredOut.map(o=>{ const m=MS.find(x=>x.key===o.mKey); return(
-                <ColRow key={o.id} isOpen={!!openOut[o.id]} onToggle={()=>tog(setOpenOut,o.id)} accent={m.accent} bg={m.light}
-                  left={<div><span style={{fontSize:13,fontWeight:"bold",color:m.color}}>{m.emoji} {m.label}</span><span style={{fontSize:11,color:"#999",marginLeft:8}}>{new Date(o.date).toLocaleDateString("en-SG",{day:"numeric",month:"short",year:"numeric"})}</span></div>}
-                  right={<><button onClick={e=>{e.stopPropagation();startEditOut(o);}} style={{background:m.light,border:"none",color:m.color,borderRadius:6,padding:"3px 10px",fontSize:12,cursor:"pointer"}}>Edit</button><button onClick={e=>{e.stopPropagation();saveOutcomes(getOutcomes().filter(x=>x.id!==o.id));}} style={{background:"#fee2e2",border:"none",color:"#ef4444",borderRadius:6,padding:"3px 10px",fontSize:12,cursor:"pointer"}}>Delete</button></>}>
-                  <p style={{margin:0,fontSize:14,color:"#444",lineHeight:1.7,background:m.light,borderRadius:8,padding:"10px 12px"}}>{o.text}</p>
-                </ColRow>
-              );})}
-            </div>
-          </>}
-
-          {/* ── OTHERS ── */}
-          {sumTab==="others"&&<>
-            <div style={{background:"#fff",borderRadius:14,padding:18,marginBottom:16,boxShadow:"0 2px 8px rgba(0,0,0,0.07)"}}>
-              <p style={{color:"#3b0764",fontWeight:"bold",fontSize:15,margin:"0 0 14px"}}>{othEdit!==null?"✏️ Edit Entry":"✦ New Entry"}</p>
-              <p style={{fontSize:12,color:"#888",margin:"0 0 6px"}}>Title (optional)</p>
-              <input value={othTitle} onChange={e=>setOthTitle(e.target.value)} placeholder="e.g. Morning Prayer, Random Thought..." style={{width:"100%",border:"2px solid #e5e7eb",borderRadius:10,padding:"9px 12px",fontSize:14,outline:"none",color:"#333",marginBottom:14}}/>
-              <p style={{fontSize:12,color:"#888",margin:"0 0 6px"}}>Date</p>
-              <input type="date" value={othDate} max={today()} onChange={e=>setOthDate(e.target.value)} style={{width:"100%",border:"2px solid #e5e7eb",borderRadius:10,padding:"9px 12px",fontSize:14,outline:"none",color:"#333",marginBottom:14}}/>
-              <p style={{fontSize:12,color:"#888",margin:"0 0 6px"}}>Your thoughts or prayer</p>
-              <textarea value={othText} onChange={e=>setOthText(e.target.value)} placeholder="Write freely — a prayer, a thought, something God laid on your heart..." style={{width:"100%",minHeight:130,border:"2px solid #a855f7",borderRadius:10,padding:12,fontSize:14,resize:"vertical",boxSizing:"border-box",outline:"none",color:"#333",marginBottom:12}}/>
-              <div style={{display:"flex",gap:8}}>
-                <button onClick={addOther} disabled={!othText.trim()} style={{flex:1,padding:"11px 0",background:othText.trim()?"#3b0764":"#e5e7eb",color:othText.trim()?"#fff":"#aaa",border:"none",borderRadius:10,fontSize:14,cursor:othText.trim()?"pointer":"default",fontWeight:"bold"}}>{othEdit!==null?"Save Changes":"Save Entry"}</button>
-                {othEdit!==null&&<button onClick={cancelEditOther} style={{padding:"11px 16px",background:"#f3f4f6",color:"#666",border:"none",borderRadius:10,fontSize:14,cursor:"pointer"}}>Cancel</button>}
-              </div>
-            </div>
-            <div style={{background:"#fff",borderRadius:14,padding:18,boxShadow:"0 2px 8px rgba(0,0,0,0.07)"}}>
-              <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:16}}>
-                <p style={{color:"#3b0764",fontWeight:"bold",fontSize:15,margin:0}}>All Entries</p>
-                <span style={{fontSize:12,color:"#999"}}>{sortedOthers.length} entr{sortedOthers.length===1?"y":"ies"}</span>
-              </div>
-              {sortedOthers.length===0?<p style={{color:"#999",fontSize:14,fontStyle:"italic"}}>No entries yet. Start by adding one above!</p>
-              :sortedOthers.map(o=>(
-                <ColRow key={o.id} isOpen={!!openOth[o.id]} onToggle={()=>tog(setOpenOth,o.id)} accent="#a855f7" bg="#f3e8ff"
-                  left={<div>{o.title&&<p style={{margin:"0 0 2px",fontSize:13,fontWeight:"bold",color:"#3b0764"}}>{o.title}</p>}<p style={{margin:0,fontSize:11,color:"#999"}}>{new Date(o.date).toLocaleDateString("en-SG",{weekday:"short",day:"numeric",month:"short",year:"numeric"})}</p></div>}
-                  right={<><button onClick={e=>{e.stopPropagation();startEditOther(o);}} style={{background:"#f3e8ff",border:"none",color:"#3b0764",borderRadius:6,padding:"3px 10px",fontSize:12,cursor:"pointer"}}>Edit</button><button onClick={e=>{e.stopPropagation();saveOthers(getOthers().filter(x=>x.id!==o.id));}} style={{background:"#fee2e2",border:"none",color:"#ef4444",borderRadius:6,padding:"3px 10px",fontSize:12,cursor:"pointer"}}>Delete</button></>}>
-                  <p style={{margin:0,fontSize:14,color:"#444",lineHeight:1.8,background:"#f3e8ff",borderRadius:8,padding:"10px 12px",whiteSpace:"pre-wrap"}}>{o.text}</p>
-                </ColRow>
-              ))}
-            </div>
-          </>}
-
-        </div>
-      </div>
-    );
-  }
-
-  /* ════════════════════════ HOME VIEW ════════════════════════ */
-  return (
-    <div style={{minHeight:"100vh",background:"#f9f7ff"}}>
-      <div style={{background:"linear-gradient(135deg,#1e3a8a 0%,#3b0764 100%)",color:"#fff",padding:"24px 16px 20px",textAlign:"center"}}>
-        <h1 style={{margin:0,fontSize:26,letterSpacing:1}}>✝ 5M Faith Tracker</h1>
-        <p style={{margin:"6px 0 16px",opacity:0.8,fontSize:13}}>Mind · Mood · Matter · Ministry · Mystery</p>
-        <div style={{display:"flex",alignItems:"center",justifyContent:"center",gap:10}}>
-          <button onClick={()=>{ const d=new Date(selDate); d.setDate(d.getDate()-1); setSelDate(d.toISOString().split("T")[0]); }} style={{background:"rgba(255,255,255,0.2)",border:"none",color:"#fff",borderRadius:8,padding:"6px 12px",cursor:"pointer",fontSize:16}}>‹</button>
-          <span style={{fontSize:14,fontWeight:"bold"}}>{isToday?"Today — ":""}{new Date(selDate).toLocaleDateString("en-SG",{weekday:"long",month:"long",day:"numeric"})}</span>
-          <button onClick={()=>{ const d=new Date(selDate); d.setDate(d.getDate()+1); setSelDate(d.toISOString().split("T")[0]); }} disabled={selDate>=today()} style={{background:"rgba(255,255,255,0.2)",border:"none",color:selDate>=today()?"rgba(255,255,255,0.3)":"#fff",borderRadius:8,padding:"6px 12px",cursor:selDate>=today()?"default":"pointer",fontSize:16}}>›</button>
-        </div>
-      </div>
-      <div style={{padding:"12px 16px 0",maxWidth:600,margin:"0 auto"}}>
-        {isToday&&completedToday<5&&<div style={{background:"#fef3c7",border:"1px solid #f59e0b",borderRadius:12,padding:"10px 14px",marginBottom:4,fontSize:13,color:"#92400e"}}>🔔 You've completed <strong>{completedToday}/5</strong> sections today. Keep going!</div>}
-        {isToday&&completedToday===5&&<div style={{background:"#dcfce7",border:"1px solid #22c55e",borderRadius:12,padding:"10px 14px",marginBottom:4,fontSize:13,color:"#14532d"}}>🎉 All 5Ms done for today! Well done.</div>}
-      </div>
-      <div style={{padding:16,maxWidth:600,margin:"0 auto"}}>
-        {MS.map(m=>{
-          const entry=getEntry(m.key), hasT=!!entry.thoughts?.trim(), appN=entry.applications?.length||0, chkN=entry.applications?.filter(a=>a.checked).length||0, filled=hasT||appN>0;
-          return(
-            <div key={m.key} onClick={()=>{setActiveM(m.key);setView("detail");}} style={{background:"#fff",borderRadius:16,marginBottom:12,overflow:"hidden",boxShadow:"0 2px 10px rgba(0,0,0,0.07)",cursor:"pointer",border:`2px solid ${filled?m.accent:"#e5e7eb"}`,display:"flex"}}>
-              <div style={{background:m.color,width:70,display:"flex",flexDirection:"column",alignItems:"center",justifyContent:"center",padding:"16px 0"}}>
-                <span style={{fontSize:26}}>{m.emoji}</span>
-                <span style={{color:"#fff",fontSize:12,fontWeight:"bold",marginTop:4}}>{m.label}</span>
-              </div>
-              <div style={{flex:1,padding:"14px 16px"}}>
-                <p style={{margin:"0 0 8px",fontSize:12,color:"#888",lineHeight:1.5}}>{m.prompt.slice(0,70)}…</p>
-                <div style={{display:"flex",gap:8,flexWrap:"wrap"}}>
-                  <span style={{fontSize:11,padding:"3px 10px",borderRadius:99,background:hasT?m.light:"#f3f4f6",color:hasT?m.color:"#999",fontWeight:"bold"}}>{hasT?"✓ Reflection":"○ Reflection"}</span>
-                  <span style={{fontSize:11,padding:"3px 10px",borderRadius:99,background:appN>0?m.light:"#f3f4f6",color:appN>0?m.color:"#999",fontWeight:"bold"}}>{appN>0?`✓ ${chkN}/${appN} steps`:"○ Application"}</span>
-                </div>
-              </div>
-              <div style={{display:"flex",alignItems:"center",paddingRight:14}}><span style={{color:"#ccc",fontSize:20}}>›</span></div>
-            </div>
-          );
-        })}
-        <button onClick={()=>{setSumTab("overview");setView("progress");}} style={{width:"100%",padding:"14px",background:"linear-gradient(135deg,#3b0764,#1e3a8a)",color:"#fff",border:"none",borderRadius:14,fontSize:15,cursor:"pointer",marginTop:8,letterSpacing:0.5}}>📊 View Progress</button>
-        <button onClick={()=>setView("resources")} style={{width:"100%",padding:"14px",background:"linear-gradient(135deg,#14532d,#22c55e)",color:"#fff",border:"none",borderRadius:14,fontSize:15,cursor:"pointer",marginTop:10,letterSpacing:0.5}}>📺 Resources</button>
-      </div>
-    </div>
-  );
+  wrap.appendChild(inner);
+  return wrap;
 }
 
-ReactDOM.createRoot(document.getElementById("root")).render(React.createElement(App));
+function render(){
+  const app=document.getElementById("app");
+  app.innerHTML="";
+  let view;
+  if(state.view==="home") view=renderHome();
+  else if(state.view==="detail") view=renderDetail();
+  else if(state.view==="progress") view=renderProgress();
+  else if(state.view==="resources") view=renderResources();
+  app.appendChild(view);
+}
+
+render();
 </script>
 </body>
 </html>
