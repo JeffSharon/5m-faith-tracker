@@ -1,0 +1,508 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8"/>
+<meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+<title>5M Faith Tracker</title>
+<script src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
+<script src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
+<script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+<style>
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body { font-family: Georgia, serif; background: #f9f7ff; }
+  textarea, input { font-family: Georgia, serif; }
+  a { text-decoration: none; }
+</style>
+</head>
+<body>
+<div id="root"></div>
+<script type="text/babel">
+const { useState } = React;
+
+const MS = [
+  { key:"mind",     label:"Mind",     emoji:"🧠", color:"#1e3a8a", light:"#dbeafe", accent:"#3b82f6", prompt:"What truth, scripture, or thought is God speaking to your mind today?",                          appPrompt:"How will you renew your mind or act on this truth today?" },
+  { key:"mood",     label:"Mood",     emoji:"🌤", color:"#92400e", light:"#fef3c7", accent:"#f59e0b", prompt:"How is your heart and emotional state before God right now?",                                    appPrompt:"What will you do to align your emotions with God's peace today?" },
+  { key:"matter",   label:"Matter",   emoji:"🌿", color:"#14532d", light:"#dcfce7", accent:"#22c55e", prompt:"What practical life area (work, health, finances, relationships) needs God's guidance?",         appPrompt:"What concrete step will you take to steward this area faithfully?" },
+  { key:"ministry", label:"Ministry", emoji:"❤️", color:"#c2410c", light:"#ffedd5", accent:"#f97316", prompt:"Who or what is God calling you to serve, encourage, or pour into today?",                       appPrompt:"What specific act of service or love will you carry out?" },
+  { key:"mystery",  label:"Mystery",  emoji:"🌙", color:"#3b0764", light:"#f3e8ff", accent:"#a855f7", prompt:"What aspect of God's nature, a scripture, or a spiritual question is stirring wonder in you?", appPrompt:"How will you sit with or explore this mystery — through prayer, study, or surrender?" },
+];
+
+const today = () => new Date().toISOString().split("T")[0];
+const getWeekDates  = () => { const d=new Date(),day=d.getDay(); return Array.from({length:7},(_,i)=>{ const x=new Date(d); x.setDate(d.getDate()-day+i); return x.toISOString().split("T")[0]; }); };
+const getMonthDates = () => { const d=new Date(),y=d.getFullYear(),mo=d.getMonth(),days=new Date(y,mo+1,0).getDate(); return Array.from({length:days},(_,i)=>new Date(y,mo,i+1).toISOString().split("T")[0]); };
+
+const KEY = "5m_faith_tracker_v3";
+const load = () => { try { return JSON.parse(localStorage.getItem(KEY)||"{}"); } catch { return {}; } };
+const persist = d => { try { localStorage.setItem(KEY,JSON.stringify(d)); } catch {} };
+
+/* ── Checkbox list ── */
+function CheckboxList({ items, onChange, accent, light }) {
+  const [txt, setTxt] = useState("");
+  const add  = () => { const t=txt.trim(); if(!t)return; onChange([...items,{id:Date.now(),text:t,checked:false}]); setTxt(""); };
+  const tog  = id => onChange(items.map(i=>i.id===id?{...i,checked:!i.checked}:i));
+  const del  = id => onChange(items.filter(i=>i.id!==id));
+  return (
+    <div>
+      {items.map(item=>(
+        <div key={item.id} style={{display:"flex",alignItems:"flex-start",gap:10,marginBottom:10,padding:"10px 12px",background:item.checked?light:"#f9fafb",borderRadius:10,border:`1px solid ${item.checked?accent:"#e5e7eb"}`}}>
+          <div onClick={()=>tog(item.id)} style={{width:20,height:20,borderRadius:5,border:`2px solid ${item.checked?accent:"#d1d5db"}`,background:item.checked?accent:"#fff",display:"flex",alignItems:"center",justifyContent:"center",cursor:"pointer",flexShrink:0,marginTop:1}}>
+            {item.checked&&<span style={{color:"#fff",fontSize:13,lineHeight:1}}>✓</span>}
+          </div>
+          <span style={{flex:1,fontSize:14,color:item.checked?"#6b7280":"#333",textDecoration:item.checked?"line-through":"none",lineHeight:1.5}}>{item.text}</span>
+          <button onClick={()=>del(item.id)} style={{background:"none",border:"none",color:"#d1d5db",cursor:"pointer",fontSize:16,padding:0,lineHeight:1,flexShrink:0}}>×</button>
+        </div>
+      ))}
+      <div style={{display:"flex",gap:8,marginTop:4}}>
+        <input value={txt} onChange={e=>setTxt(e.target.value)} onKeyDown={e=>e.key==="Enter"&&add()} placeholder="Add an application step..." style={{flex:1,border:`2px solid ${accent}`,borderRadius:10,padding:"9px 12px",fontSize:14,outline:"none",color:"#333"}}/>
+        <button onClick={add} style={{background:accent,color:"#fff",border:"none",borderRadius:10,padding:"9px 16px",fontSize:14,cursor:"pointer",fontWeight:"bold"}}>+</button>
+      </div>
+    </div>
+  );
+}
+
+/* ── Backup / Restore ── */
+function BackupRestore({ data, onRestore }) {
+  const exp = () => {
+    const blob=new Blob([JSON.stringify(data,null,2)],{type:"application/json"});
+    const url=URL.createObjectURL(blob), a=document.createElement("a");
+    a.href=url; a.download="5M-Faith-Tracker-Backup-"+today()+".json"; a.click(); URL.revokeObjectURL(url);
+  };
+  const imp = e => {
+    const file=e.target.files[0]; if(!file)return;
+    const r=new FileReader();
+    r.onload=ev=>{ try { const p=JSON.parse(ev.target.result); if(window.confirm("Replace all data with this backup?")){ onRestore(p); alert("✅ Restored!"); } } catch { alert("❌ Invalid file."); } };
+    r.readAsText(file); e.target.value="";
+  };
+  return (
+    <div style={{background:"#fff",borderRadius:14,padding:18,marginBottom:16,boxShadow:"0 2px 8px rgba(0,0,0,0.07)"}}>
+      <p style={{color:"#3b0764",fontWeight:"bold",fontSize:15,margin:"0 0 6px"}}>🗄 Backup & Restore</p>
+      <p style={{color:"#888",fontSize:13,margin:"0 0 14px",lineHeight:1.5}}>Export your data as a JSON file to back it up or transfer to another device.</p>
+      <div style={{display:"flex",gap:8}}>
+        <button onClick={exp} style={{flex:1,padding:"10px 0",background:"#3b0764",color:"#fff",border:"none",borderRadius:10,fontSize:14,cursor:"pointer",fontWeight:"bold"}}>⬇ Export Backup</button>
+        <label style={{flex:1,padding:"10px 0",background:"#f3e8ff",color:"#3b0764",border:"2px solid #a855f7",borderRadius:10,fontSize:14,cursor:"pointer",fontWeight:"bold",textAlign:"center"}}>
+          ⬆ Restore Backup
+          <input type="file" accept=".json" onChange={imp} style={{display:"none"}}/>
+        </label>
+      </div>
+    </div>
+  );
+}
+
+/* ══════════════════════════════════════════
+   MAIN APP
+══════════════════════════════════════════ */
+function App() {
+  const [view,        setView]        = useState("home");
+  const [activeM,     setActiveM]     = useState(null);
+  const [data,        setData]        = useState(load);
+  const [selDate,     setSelDate]     = useState(today());
+  const [sumTab,      setSumTab]      = useState("overview");
+  const [reflPeriod,  setReflPeriod]  = useState("week");
+  const [reflM,       setReflM]       = useState("mind");
+
+  // Collapsible maps
+  const [openWA,  setOpenWA]  = useState({});
+  const [openRfl, setOpenRfl] = useState({});
+  const [openOut, setOpenOut] = useState({});
+  const [openOth, setOpenOth] = useState({});
+  const tog = (fn,k) => fn(p=>({...p,[k]:!p[k]}));
+
+  // Others
+  const [othDate,  setOthDate]  = useState(today());
+  const [othText,  setOthText]  = useState("");
+  const [othTitle, setOthTitle] = useState("");
+  const [othEdit,  setOthEdit]  = useState(null);
+
+  // Outcomes
+  const [outM,      setOutM]      = useState("mind");
+  const [outDate,   setOutDate]   = useState(today());
+  const [outText,   setOutText]   = useState("");
+  const [outFilter, setOutFilter] = useState("all");
+  const [outEdit,   setOutEdit]   = useState(null);
+
+  // Resources
+  const [resUrl,    setResUrl]    = useState("");
+  const [resDesc,   setResDesc]   = useState("");
+  const [resEditId, setResEditId] = useState(null);
+
+  /* helpers */
+  const mut = fn => { const u=fn(data); setData(u); persist(u); };
+  const getEntry    = (mKey,date) => data[date||selDate]?.[mKey]||{thoughts:"",applications:[]};
+  const updField    = (mKey,field,val) => mut(d=>({...d,[selDate]:{...d[selDate],[mKey]:{...getEntry(mKey),[field]:val}}}));
+  const restoreData = p => { setData(p); persist(p); };
+
+  const getOthers   = () => data.__others||[];
+  const getOutcomes = () => data.__outcomes||[];
+  const getResources= () => data.__resources||[];
+
+  const saveOthers   = list => mut(d=>({...d,__others:list}));
+  const saveOutcomes = list => mut(d=>({...d,__outcomes:list}));
+  const saveResources= list => mut(d=>({...d,__resources:list}));
+
+  /* Others CRUD */
+  const addOther = () => {
+    if(!othText.trim())return;
+    if(othEdit!==null){ saveOthers(getOthers().map(o=>o.id===othEdit?{...o,date:othDate,title:othTitle.trim(),text:othText.trim()}:o)); setOthEdit(null); }
+    else saveOthers([...getOthers(),{id:Date.now(),date:othDate,title:othTitle.trim(),text:othText.trim()}]);
+    setOthText(""); setOthTitle(""); setOthDate(today());
+  };
+  const startEditOther  = o => { setOthDate(o.date); setOthTitle(o.title||""); setOthText(o.text); setOthEdit(o.id); setSumTab("others"); };
+  const cancelEditOther = () => { setOthEdit(null); setOthText(""); setOthTitle(""); setOthDate(today()); };
+
+  /* Outcomes CRUD */
+  const addOutcome = () => {
+    if(!outText.trim())return;
+    if(outEdit!==null){ saveOutcomes(getOutcomes().map(o=>o.id===outEdit?{...o,mKey:outM,date:outDate,text:outText.trim()}:o)); setOutEdit(null); }
+    else saveOutcomes([...getOutcomes(),{id:Date.now(),mKey:outM,date:outDate,text:outText.trim()}]);
+    setOutText(""); setOutDate(today()); setOutM("mind");
+  };
+  const startEditOut  = o => { setOutM(o.mKey); setOutDate(o.date); setOutText(o.text); setOutEdit(o.id); };
+  const cancelEditOut = () => { setOutEdit(null); setOutText(""); setOutDate(today()); setOutM("mind"); };
+
+  /* Resources CRUD */
+  const extractVid = url => { const m=url.match(/(?:youtu\.be\/|v=|\/embed\/|\/shorts\/)([A-Za-z0-9_-]{11})/); return m?m[1]:null; };
+  const addResource = () => {
+    const vid=extractVid(resUrl.trim());
+    if(!vid){ alert("Please enter a valid YouTube URL."); return; }
+    const list=getResources();
+    if(resEditId!==null){ saveResources(list.map(r=>r.id===resEditId?{...r,url:resUrl.trim(),vid,desc:resDesc.trim()}:r)); setResEditId(null); }
+    else saveResources([...list,{id:Date.now(),url:resUrl.trim(),vid,desc:resDesc.trim()}]);
+    setResUrl(""); setResDesc("");
+  };
+  const startEditRes  = r => { setResUrl(r.url); setResDesc(r.desc); setResEditId(r.id); };
+  const cancelEditRes = () => { setResUrl(""); setResDesc(""); setResEditId(null); };
+
+  /* Derived */
+  const completedToday = MS.filter(m=>{ const e=getEntry(m.key); return e.thoughts?.trim()||e.applications?.length>0; }).length;
+  const weekDates      = getWeekDates();
+  const weekProgress   = weekDates.map(d=>({ date:d, label:new Date(d).toLocaleDateString("en-SG",{weekday:"short"}), count:MS.filter(m=>{ const e=data[d]?.[m.key]; return e?.thoughts?.trim()||e?.applications?.length>0; }).length }));
+  const weekApps       = weekDates.flatMap(d=>MS.map(m=>{ const apps=data[d]?.[m.key]?.applications||[]; return apps.length>0?{date:d,m,apps}:null; }).filter(Boolean));
+  const reflDates      = reflPeriod==="week"?getWeekDates():getMonthDates();
+  const reflMeta       = MS.find(x=>x.key===reflM);
+  const reflEntries    = reflDates.map(d=>{ const e=data[d]?.[reflM]; if(!e?.thoughts?.trim()&&!e?.applications?.length)return null; return{date:d,thoughts:e.thoughts||"",applications:e.applications||}; }).filter(Boolean);
+  const filteredOut    = getOutcomes().filter(o=>outFilter==="all"||o.mKey===outFilter).sort((a,b)=>b.date.localeCompare(a.date));
+  const sortedOthers   = getOthers().slice().sort((a,b)=>b.date.localeCompare(a.date));
+
+  const isToday = selDate===today();
+
+  /* ── Btn styles ── */
+  const pill = (active,color,light,accent) => ({ padding:"7px 14px",borderRadius:99,border:`2px solid ${active?accent:"#e5e7eb"}`,background:active?light:"#fff",color:active?color:"#888",fontSize:13,cursor:"pointer",fontWeight:active?"bold":"normal" });
+
+  /* ════════════════════════ RESOURCES VIEW ════════════════════════ */
+  if(view==="resources"){
+    const resources=getResources();
+    return (
+      <div style={{minHeight:"100vh",background:"#f0fdf4"}}>
+        <div style={{background:"#14532d",color:"#fff",padding:"20px 16px 16px"}}>
+          <button onClick={()=>setView("home")} style={{background:"rgba(255,255,255,0.2)",border:"none",color:"#fff",borderRadius:8,padding:"6px 14px",cursor:"pointer",marginBottom:12,fontSize:14}}>← Back</button>
+          <h2 style={{margin:0,fontSize:22}}>📺 Resources</h2>
+          <p style={{margin:"4px 0 0",opacity:0.8,fontSize:13}}>Your faith video library</p>
+        </div>
+        <div style={{padding:16,maxWidth:600,margin:"0 auto"}}>
+          <div style={{background:"#fef9c3",border:"1px solid #ca8a04",borderRadius:12,padding:"10px 14px",marginBottom:16,fontSize:13,color:"#713f12",lineHeight:1.6}}>
+            💡 <strong>Tip:</strong> Tap <strong>▶ New Tab</strong> to open YouTube in a new Safari tab — then switch back here and audio keeps playing! Use <strong>▶ Open</strong> to open in the same tab.
+          </div>
+          {/* Form */}
+          <div style={{background:"#fff",borderRadius:14,padding:18,marginBottom:16,boxShadow:"0 2px 8px rgba(0,0,0,0.07)"}}>
+            <p style={{color:"#14532d",fontWeight:"bold",fontSize:15,margin:"0 0 14px"}}>{resEditId!==null?"✏️ Edit Resource":"✦ Add YouTube Video"}</p>
+            <p style={{fontSize:12,color:"#888",margin:"0 0 6px"}}>YouTube URL</p>
+            <input value={resUrl} onChange={e=>setResUrl(e.target.value)} placeholder="https://www.youtube.com/watch?v=..." style={{width:"100%",border:"2px solid #22c55e",borderRadius:10,padding:"9px 12px",fontSize:14,outline:"none",color:"#333",boxSizing:"border-box",marginBottom:12}}/>
+            <p style={{fontSize:12,color:"#888",margin:"0 0 6px"}}>Short description</p>
+            <textarea value={resDesc} onChange={e=>setResDesc(e.target.value)} placeholder="e.g. Sunday sermon on grace, Worship set by Hillsong..." style={{width:"100%",minHeight:70,border:"2px solid #22c55e",borderRadius:10,padding:"9px 12px",fontSize:14,resize:"vertical",boxSizing:"border-box",outline:"none",color:"#333",marginBottom:12}}/>
+            <div style={{display:"flex",gap:8}}>
+              <button onClick={addResource} disabled={!resUrl.trim()} style={{flex:1,padding:"11px 0",background:resUrl.trim()?"#14532d":"#e5e7eb",color:resUrl.trim()?"#fff":"#aaa",border:"none",borderRadius:10,fontSize:14,cursor:resUrl.trim()?"pointer":"default",fontWeight:"bold"}}>{resEditId!==null?"Save Changes":"Add Video"}</button>
+              {resEditId!==null&&<button onClick={cancelEditRes} style={{padding:"11px 16px",background:"#f3f4f6",color:"#666",border:"none",borderRadius:10,fontSize:14,cursor:"pointer"}}>Cancel</button>}
+            </div>
+          </div>
+          {/* List */}
+          {resources.length===0
+            ?<div style={{textAlign:"center",padding:"40px 0",color:"#999"}}><p style={{fontSize:32,marginBottom:8}}>📺</p><p style={{fontSize:14,fontStyle:"italic"}}>No videos yet. Add a YouTube link above!</p></div>
+            :resources.map((r,idx)=>(
+              <div key={r.id} style={{background:"#fff",borderRadius:14,marginBottom:12,overflow:"hidden",boxShadow:"0 2px 8px rgba(0,0,0,0.07)",border:"2px solid #e5e7eb"}}>
+                <div style={{display:"flex",gap:12,padding:"14px 14px 10px",alignItems:"center"}}>
+                  <div style={{flexShrink:0,width:52,height:52,borderRadius:12,background:"#dcfce7",display:"flex",alignItems:"center",justifyContent:"center"}}>
+                    <span style={{fontSize:26}}>▶️</span>
+                  </div>
+                  <div style={{flex:1,minWidth:0}}>
+                    <p style={{margin:"0 0 4px",fontSize:14,color:"#333",fontWeight:"bold",lineHeight:1.4}}>{r.desc||"Untitled video"}</p>
+                    <p style={{margin:0,fontSize:11,color:"#86efac",overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{r.url}</p>
+                  </div>
+                </div>
+                <div style={{display:"flex",borderTop:"1px solid #f0fdf4"}}>
+                  <a href={r.url} style={{flex:1,padding:"11px 0",background:"#14532d",color:"#fff",fontSize:12,fontWeight:"bold",textAlign:"center",display:"block"}}>▶ Open</a>
+                  <div style={{width:1,background:"#166534"}}/>
+                  <a href={r.url} target="_blank" rel="noopener noreferrer" style={{flex:1,padding:"11px 0",background:"#166534",color:"#fff",fontSize:12,fontWeight:"bold",textAlign:"center",display:"block"}}>▶ New Tab</a>
+                  <div style={{width:1,background:"#e5e7eb"}}/>
+                  <button onClick={()=>startEditRes(r)} style={{flex:1,padding:"11px 0",background:"#f0fdf4",color:"#14532d",border:"none",fontSize:12,cursor:"pointer"}}>Edit</button>
+                  <div style={{width:1,background:"#e5e7eb"}}/>
+                  <button onClick={()=>saveResources(resources.filter(x=>x.id!==r.id))} style={{flex:1,padding:"11px 0",background:"#f0fdf4",color:"#ef4444",border:"none",fontSize:12,cursor:"pointer"}}>Delete</button>
+                </div>
+              </div>
+            ))
+          }
+        </div>
+      </div>
+    );
+  }
+
+  /* ════════════════════════ DETAIL VIEW ════════════════════════ */
+  if(view==="detail"&&activeM){
+    const m=MS.find(x=>x.key===activeM), entry=getEntry(m.key);
+    return (
+      <div style={{minHeight:"100vh",background:m.light}}>
+        <div style={{background:m.color,color:"#fff",padding:"20px 16px 16px"}}>
+          <button onClick={()=>setView("home")} style={{background:"rgba(255,255,255,0.2)",border:"none",color:"#fff",borderRadius:8,padding:"6px 14px",cursor:"pointer",marginBottom:12,fontSize:14}}>← Back</button>
+          <div style={{fontSize:36}}>{m.emoji}</div>
+          <h2 style={{margin:"4px 0 0",fontSize:24}}>{m.label}</h2>
+          <p style={{margin:"4px 0 0",opacity:0.85,fontSize:13}}>{selDate}</p>
+        </div>
+        <div style={{padding:16,maxWidth:600,margin:"0 auto"}}>
+          <div style={{background:"#fff",borderRadius:14,padding:18,marginBottom:16,boxShadow:"0 2px 8px rgba(0,0,0,0.07)"}}>
+            <p style={{color:m.color,fontWeight:"bold",fontSize:14,marginBottom:8}}>✦ Today's Reflection</p>
+            <p style={{color:"#444",fontSize:14,lineHeight:1.6,margin:"0 0 12px"}}>{m.prompt}</p>
+            <textarea value={entry.thoughts} onChange={e=>updField(m.key,"thoughts",e.target.value)} placeholder="Write your thoughts here..." style={{width:"100%",minHeight:120,border:`2px solid ${m.accent}`,borderRadius:10,padding:12,fontSize:14,resize:"vertical",boxSizing:"border-box",outline:"none",color:"#333"}}/>
+          </div>
+          <div style={{background:"#fff",borderRadius:14,padding:18,boxShadow:"0 2px 8px rgba(0,0,0,0.07)"}}>
+            <p style={{color:m.color,fontWeight:"bold",fontSize:14,marginBottom:4}}>✦ Application Steps</p>
+            <p style={{color:"#888",fontSize:13,lineHeight:1.5,margin:"0 0 14px"}}>{m.appPrompt}</p>
+            <CheckboxList items={entry.applications||[]} onChange={val=>updField(m.key,"applications",val)} accent={m.accent} light={m.light}/>
+          </div>
+        </div>
+      </div>
+    );
+  }
+
+  /* ════════════════════════ PROGRESS VIEW ════════════════════════ */
+  if(view==="progress"){
+    const tabs=[{id:"overview",label:"Overview"},{id:"reflections",label:"Reflections"},{id:"outcomes",label:"Outcomes"},{id:"others",label:"Others"}];
+    /* small reusable row */
+    const ColRow = ({isOpen,onToggle,left,right,accent,bg,children}) => (
+      <div style={{borderRadius:10,border:"1px solid #e5e7eb",marginBottom:10,overflow:"hidden"}}>
+        <div onClick={onToggle} style={{display:"flex",justifyContent:"space-between",alignItems:"center",padding:"10px 14px",background:isOpen?bg:"#f9fafb",cursor:"pointer"}}>
+          <div style={{flex:1,minWidth:0}}>{left}</div>
+          <div style={{display:"flex",gap:6,alignItems:"center",flexShrink:0}}>{right}<span style={{color:"#aaa",fontSize:14}}>{isOpen?"▲":"▼"}</span></div>
+        </div>
+        {isOpen&&<div style={{padding:"12px 14px",borderTop:`2px solid ${accent}`}}>{children}</div>}
+      </div>
+    );
+    return (
+      <div style={{minHeight:"100vh",background:"#f8f5ff"}}>
+        <div style={{background:"#3b0764",color:"#fff",padding:"20px 16px 0"}}>
+          <button onClick={()=>setView("home")} style={{background:"rgba(255,255,255,0.2)",border:"none",color:"#fff",borderRadius:8,padding:"6px 14px",cursor:"pointer",marginBottom:12,fontSize:14}}>← Back</button>
+          <h2 style={{margin:0,fontSize:22}}>📊 Progress</h2>
+          <p style={{margin:"4px 0 16px",opacity:0.8,fontSize:13}}>Your faith journey overview</p>
+          <div style={{display:"flex",gap:4,overflowX:"auto"}}>
+            {tabs.map(t=><button key={t.id} onClick={()=>setSumTab(t.id)} style={{padding:"10px 16px",background:sumTab===t.id?"#fff":"transparent",color:sumTab===t.id?"#3b0764":"rgba(255,255,255,0.75)",border:"none",borderRadius:"10px 10px 0 0",cursor:"pointer",fontSize:13,fontWeight:sumTab===t.id?"bold":"normal",whiteSpace:"nowrap"}}>{t.label}</button>)}
+          </div>
+        </div>
+        <div style={{padding:16,maxWidth:600,margin:"0 auto"}}>
+
+          {/* ── OVERVIEW ── */}
+          {sumTab==="overview"&&<>
+            <BackupRestore data={data} onRestore={restoreData}/>
+            <div style={{background:"#fff",borderRadius:14,padding:18,marginBottom:16,boxShadow:"0 2px 8px rgba(0,0,0,0.07)"}}>
+              <p style={{color:"#3b0764",fontWeight:"bold",fontSize:15,margin:"0 0 14px"}}>Daily Completion</p>
+              <div style={{display:"flex",gap:8,justifyContent:"space-between"}}>
+                {weekProgress.map(d=><div key={d.date} style={{flex:1,textAlign:"center"}}>
+                  <div style={{height:80,background:"#f3e8ff",borderRadius:8,display:"flex",alignItems:"flex-end",overflow:"hidden"}}>
+                    <div style={{width:"100%",height:`${(d.count/5)*100}%`,background:"#a855f7",borderRadius:"8px 8px 0 0"}}/>
+                  </div>
+                  <p style={{fontSize:11,color:"#666",margin:"4px 0 0"}}>{d.label}</p>
+                  <p style={{fontSize:12,color:"#a855f7",margin:0,fontWeight:"bold"}}>{d.count}/5</p>
+                </div>)}
+              </div>
+            </div>
+            <div style={{background:"#fff",borderRadius:14,padding:18,marginBottom:16,boxShadow:"0 2px 8px rgba(0,0,0,0.07)"}}>
+              <p style={{color:"#3b0764",fontWeight:"bold",fontSize:15,margin:"0 0 14px"}}>Progress by Section</p>
+              {MS.map(m=>{ const c=weekDates.filter(d=>{ const e=data[d]?.[m.key]; return e?.thoughts?.trim()||e?.applications?.length>0; }).length; return(
+                <div key={m.key} style={{marginBottom:12}}>
+                  <div style={{display:"flex",justifyContent:"space-between",marginBottom:4}}>
+                    <span style={{fontSize:14,color:m.color,fontWeight:"bold"}}>{m.emoji} {m.label}</span>
+                    <span style={{fontSize:13,color:"#666"}}>{c}/7 days</span>
+                  </div>
+                  <div style={{background:m.light,borderRadius:99,height:10}}>
+                    <div style={{width:`${(c/7)*100}%`,background:m.accent,height:10,borderRadius:99}}/>
+                  </div>
+                </div>
+              );})}
+            </div>
+            <div style={{background:"#fff",borderRadius:14,padding:18,boxShadow:"0 2px 8px rgba(0,0,0,0.07)"}}>
+              <p style={{color:"#3b0764",fontWeight:"bold",fontSize:15,margin:"0 0 14px"}}>✦ Applications This Week</p>
+              {weekApps.length===0?<p style={{color:"#999",fontSize:14,fontStyle:"italic"}}>No applications recorded yet this week.</p>
+              :weekApps.map((item,i)=>(
+                <ColRow key={i} isOpen={!!openWA[i]} onToggle={()=>tog(setOpenWA,i)} accent={item.m.accent} bg={item.m.light}
+                  left={<div style={{display:"flex",gap:8,alignItems:"center",flexWrap:"wrap"}}>
+                    <span style={{fontSize:13,fontWeight:"bold",color:item.m.color}}>{item.m.emoji} {item.m.label}</span>
+                    <span style={{fontSize:11,color:"#999"}}>{new Date(item.date).toLocaleDateString("en-SG",{weekday:"short",month:"short",day:"numeric"})}</span>
+                    <span style={{fontSize:11,background:item.m.light,color:item.m.color,borderRadius:99,padding:"2px 8px"}}>{item.apps.filter(a=>a.checked).length}/{item.apps.length} done</span>
+                  </div>}>
+                  {item.apps.map(a=><div key={a.id} style={{display:"flex",alignItems:"center",gap:8,marginBottom:5}}>
+                    <div style={{width:16,height:16,borderRadius:4,border:`2px solid ${item.m.accent}`,background:a.checked?item.m.accent:"#fff",display:"flex",alignItems:"center",justifyContent:"center",flexShrink:0}}>{a.checked&&<span style={{color:"#fff",fontSize:10}}>✓</span>}</div>
+                    <span style={{fontSize:13,color:a.checked?"#9ca3af":"#444",textDecoration:a.checked?"line-through":"none"}}>{a.text}</span>
+                  </div>)}
+                </ColRow>
+              ))}
+            </div>
+          </>}
+
+          {/* ── REFLECTIONS ── */}
+          {sumTab==="reflections"&&<>
+            <div style={{background:"#fff",borderRadius:14,padding:16,marginBottom:16,boxShadow:"0 2px 8px rgba(0,0,0,0.07)"}}>
+              <p style={{color:"#3b0764",fontWeight:"bold",fontSize:14,margin:"0 0 12px"}}>Filter Reflections</p>
+              <p style={{fontSize:12,color:"#888",margin:"0 0 6px"}}>Period</p>
+              <div style={{display:"flex",gap:8,marginBottom:14}}>
+                {[{id:"week",label:"This Week"},{id:"month",label:"This Month"}].map(p=><button key={p.id} onClick={()=>setReflPeriod(p.id)} style={{flex:1,padding:"8px 0",borderRadius:10,border:`2px solid ${reflPeriod===p.id?"#3b0764":"#e5e7eb"}`,background:reflPeriod===p.id?"#3b0764":"#fff",color:reflPeriod===p.id?"#fff":"#666",fontSize:13,cursor:"pointer"}}>{p.label}</button>)}
+              </div>
+              <p style={{fontSize:12,color:"#888",margin:"0 0 8px"}}>Section</p>
+              <div style={{display:"flex",gap:8,flexWrap:"wrap"}}>
+                {MS.map(m=><button key={m.key} onClick={()=>setReflM(m.key)} style={pill(reflM===m.key,m.color,m.light,m.accent)}>{m.emoji} {m.label}</button>)}
+              </div>
+            </div>
+            <div style={{background:"#fff",borderRadius:14,padding:18,boxShadow:"0 2px 8px rgba(0,0,0,0.07)"}}>
+              <div style={{display:"flex",alignItems:"center",gap:10,marginBottom:16}}>
+                <div style={{background:reflMeta.color,borderRadius:10,width:38,height:38,display:"flex",alignItems:"center",justifyContent:"center",fontSize:20}}>{reflMeta.emoji}</div>
+                <div>
+                  <p style={{margin:0,fontWeight:"bold",color:reflMeta.color,fontSize:15}}>{reflMeta.label} Reflections</p>
+                  <p style={{margin:0,fontSize:12,color:"#999"}}>{reflPeriod==="week"?"This week":new Date().toLocaleDateString("en-SG",{month:"long",year:"numeric"})} · {reflEntries.length} entr{reflEntries.length===1?"y":"ies"}</p>
+                </div>
+              </div>
+              {reflEntries.length===0?<p style={{color:"#999",fontSize:14,fontStyle:"italic"}}>No {reflMeta.label} reflections for this period.</p>
+              :reflEntries.map((entry,i)=>(
+                <ColRow key={i} isOpen={!!openRfl[i]} onToggle={()=>tog(setOpenRfl,i)} accent={reflMeta.accent} bg={reflMeta.light}
+                  left={<span style={{fontSize:13,fontWeight:"bold",color:reflMeta.color}}>{new Date(entry.date).toLocaleDateString("en-SG",{weekday:"long",month:"short",day:"numeric"})}</span>}>
+                  {entry.thoughts?.trim()&&<div style={{marginBottom:entry.applications.length>0?10:0}}>
+                    <p style={{margin:"0 0 4px",fontSize:11,color:"#aaa",textTransform:"uppercase",letterSpacing:0.5}}>Reflection</p>
+                    <p style={{margin:0,fontSize:14,color:"#444",lineHeight:1.7,background:reflMeta.light,borderRadius:8,padding:"10px 12px"}}>{entry.thoughts}</p>
+                  </div>}
+                  {entry.applications.length>0&&<div>
+                    <p style={{margin:"0 0 6px",fontSize:11,color:"#aaa",textTransform:"uppercase",letterSpacing:0.5}}>Application Steps</p>
+                    {entry.applications.map(a=><div key={a.id} style={{display:"flex",alignItems:"center",gap:8,marginBottom:5}}>
+                      <div style={{width:16,height:16,borderRadius:4,border:`2px solid ${reflMeta.accent}`,background:a.checked?reflMeta.accent:"#fff",display:"flex",alignItems:"center",justifyContent:"center",flexShrink:0}}>{a.checked&&<span style={{color:"#fff",fontSize:10}}>✓</span>}</div>
+                      <span style={{fontSize:13,color:a.checked?"#9ca3af":"#444",textDecoration:a.checked?"line-through":"none"}}>{a.text}</span>
+                    </div>)}
+                  </div>}
+                </ColRow>
+              ))}
+            </div>
+          </>}
+
+          {/* ── OUTCOMES ── */}
+          {sumTab==="outcomes"&&<>
+            <div style={{background:"#fff",borderRadius:14,padding:18,marginBottom:16,boxShadow:"0 2px 8px rgba(0,0,0,0.07)"}}>
+              <p style={{color:"#3b0764",fontWeight:"bold",fontSize:15,margin:"0 0 14px"}}>{outEdit!==null?"✏️ Edit Outcome":"✦ Record an Outcome"}</p>
+              <p style={{fontSize:12,color:"#888",margin:"0 0 8px"}}>Which M section?</p>
+              <div style={{display:"flex",gap:8,flexWrap:"wrap",marginBottom:14}}>
+                {MS.map(m=><button key={m.key} onClick={()=>setOutM(m.key)} style={pill(outM===m.key,m.color,m.light,m.accent)}>{m.emoji} {m.label}</button>)}
+              </div>
+              <p style={{fontSize:12,color:"#888",margin:"0 0 6px"}}>Date of completion</p>
+              <input type="date" value={outDate} max={today()} onChange={e=>setOutDate(e.target.value)} style={{width:"100%",border:"2px solid #e5e7eb",borderRadius:10,padding:"9px 12px",fontSize:14,outline:"none",color:"#333",marginBottom:14}}/>
+              <p style={{fontSize:12,color:"#888",margin:"0 0 6px"}}>Outcome</p>
+              <textarea value={outText} onChange={e=>setOutText(e.target.value)} placeholder="Describe what God did, what changed, or what fruit came from this..." style={{width:"100%",minHeight:110,border:`2px solid ${MS.find(m=>m.key===outM).accent}`,borderRadius:10,padding:12,fontSize:14,resize:"vertical",boxSizing:"border-box",outline:"none",color:"#333",marginBottom:12}}/>
+              <div style={{display:"flex",gap:8}}>
+                <button onClick={addOutcome} disabled={!outText.trim()} style={{flex:1,padding:"11px 0",background:outText.trim()?MS.find(m=>m.key===outM).color:"#e5e7eb",color:outText.trim()?"#fff":"#aaa",border:"none",borderRadius:10,fontSize:14,cursor:outText.trim()?"pointer":"default",fontWeight:"bold"}}>{outEdit!==null?"Save Changes":"Save Outcome"}</button>
+                {outEdit!==null&&<button onClick={cancelEditOut} style={{padding:"11px 16px",background:"#f3f4f6",color:"#666",border:"none",borderRadius:10,fontSize:14,cursor:"pointer"}}>Cancel</button>}
+              </div>
+            </div>
+            <div style={{background:"#fff",borderRadius:14,padding:18,boxShadow:"0 2px 8px rgba(0,0,0,0.07)"}}>
+              <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:12}}>
+                <p style={{color:"#3b0764",fontWeight:"bold",fontSize:15,margin:0}}>Recorded Outcomes</p>
+                <span style={{fontSize:12,color:"#999"}}>{filteredOut.length} entr{filteredOut.length===1?"y":"ies"}</span>
+              </div>
+              <div style={{display:"flex",gap:6,flexWrap:"wrap",marginBottom:16}}>
+                <button onClick={()=>setOutFilter("all")} style={{padding:"5px 12px",borderRadius:99,border:`2px solid ${outFilter==="all"?"#3b0764":"#e5e7eb"}`,background:outFilter==="all"?"#3b0764":"#fff",color:outFilter==="all"?"#fff":"#888",fontSize:12,cursor:"pointer"}}>All</button>
+                {MS.map(m=><button key={m.key} onClick={()=>setOutFilter(m.key)} style={{padding:"5px 12px",borderRadius:99,border:`2px solid ${outFilter===m.key?m.accent:"#e5e7eb"}`,background:outFilter===m.key?m.light:"#fff",color:outFilter===m.key?m.color:"#888",fontSize:12,cursor:"pointer",fontWeight:outFilter===m.key?"bold":"normal"}}>{m.emoji} {m.label}</button>)}
+              </div>
+              {filteredOut.length===0?<p style={{color:"#999",fontSize:14,fontStyle:"italic"}}>No outcomes recorded yet.</p>
+              :filteredOut.map(o=>{ const m=MS.find(x=>x.key===o.mKey); return(
+                <ColRow key={o.id} isOpen={!!openOut[o.id]} onToggle={()=>tog(setOpenOut,o.id)} accent={m.accent} bg={m.light}
+                  left={<div><span style={{fontSize:13,fontWeight:"bold",color:m.color}}>{m.emoji} {m.label}</span><span style={{fontSize:11,color:"#999",marginLeft:8}}>{new Date(o.date).toLocaleDateString("en-SG",{day:"numeric",month:"short",year:"numeric"})}</span></div>}
+                  right={<><button onClick={e=>{e.stopPropagation();startEditOut(o);}} style={{background:m.light,border:"none",color:m.color,borderRadius:6,padding:"3px 10px",fontSize:12,cursor:"pointer"}}>Edit</button><button onClick={e=>{e.stopPropagation();saveOutcomes(getOutcomes().filter(x=>x.id!==o.id));}} style={{background:"#fee2e2",border:"none",color:"#ef4444",borderRadius:6,padding:"3px 10px",fontSize:12,cursor:"pointer"}}>Delete</button></>}>
+                  <p style={{margin:0,fontSize:14,color:"#444",lineHeight:1.7,background:m.light,borderRadius:8,padding:"10px 12px"}}>{o.text}</p>
+                </ColRow>
+              );})}
+            </div>
+          </>}
+
+          {/* ── OTHERS ── */}
+          {sumTab==="others"&&<>
+            <div style={{background:"#fff",borderRadius:14,padding:18,marginBottom:16,boxShadow:"0 2px 8px rgba(0,0,0,0.07)"}}>
+              <p style={{color:"#3b0764",fontWeight:"bold",fontSize:15,margin:"0 0 14px"}}>{othEdit!==null?"✏️ Edit Entry":"✦ New Entry"}</p>
+              <p style={{fontSize:12,color:"#888",margin:"0 0 6px"}}>Title (optional)</p>
+              <input value={othTitle} onChange={e=>setOthTitle(e.target.value)} placeholder="e.g. Morning Prayer, Random Thought..." style={{width:"100%",border:"2px solid #e5e7eb",borderRadius:10,padding:"9px 12px",fontSize:14,outline:"none",color:"#333",marginBottom:14}}/>
+              <p style={{fontSize:12,color:"#888",margin:"0 0 6px"}}>Date</p>
+              <input type="date" value={othDate} max={today()} onChange={e=>setOthDate(e.target.value)} style={{width:"100%",border:"2px solid #e5e7eb",borderRadius:10,padding:"9px 12px",fontSize:14,outline:"none",color:"#333",marginBottom:14}}/>
+              <p style={{fontSize:12,color:"#888",margin:"0 0 6px"}}>Your thoughts or prayer</p>
+              <textarea value={othText} onChange={e=>setOthText(e.target.value)} placeholder="Write freely — a prayer, a thought, something God laid on your heart..." style={{width:"100%",minHeight:130,border:"2px solid #a855f7",borderRadius:10,padding:12,fontSize:14,resize:"vertical",boxSizing:"border-box",outline:"none",color:"#333",marginBottom:12}}/>
+              <div style={{display:"flex",gap:8}}>
+                <button onClick={addOther} disabled={!othText.trim()} style={{flex:1,padding:"11px 0",background:othText.trim()?"#3b0764":"#e5e7eb",color:othText.trim()?"#fff":"#aaa",border:"none",borderRadius:10,fontSize:14,cursor:othText.trim()?"pointer":"default",fontWeight:"bold"}}>{othEdit!==null?"Save Changes":"Save Entry"}</button>
+                {othEdit!==null&&<button onClick={cancelEditOther} style={{padding:"11px 16px",background:"#f3f4f6",color:"#666",border:"none",borderRadius:10,fontSize:14,cursor:"pointer"}}>Cancel</button>}
+              </div>
+            </div>
+            <div style={{background:"#fff",borderRadius:14,padding:18,boxShadow:"0 2px 8px rgba(0,0,0,0.07)"}}>
+              <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:16}}>
+                <p style={{color:"#3b0764",fontWeight:"bold",fontSize:15,margin:0}}>All Entries</p>
+                <span style={{fontSize:12,color:"#999"}}>{sortedOthers.length} entr{sortedOthers.length===1?"y":"ies"}</span>
+              </div>
+              {sortedOthers.length===0?<p style={{color:"#999",fontSize:14,fontStyle:"italic"}}>No entries yet. Start by adding one above!</p>
+              :sortedOthers.map(o=>(
+                <ColRow key={o.id} isOpen={!!openOth[o.id]} onToggle={()=>tog(setOpenOth,o.id)} accent="#a855f7" bg="#f3e8ff"
+                  left={<div>{o.title&&<p style={{margin:"0 0 2px",fontSize:13,fontWeight:"bold",color:"#3b0764"}}>{o.title}</p>}<p style={{margin:0,fontSize:11,color:"#999"}}>{new Date(o.date).toLocaleDateString("en-SG",{weekday:"short",day:"numeric",month:"short",year:"numeric"})}</p></div>}
+                  right={<><button onClick={e=>{e.stopPropagation();startEditOther(o);}} style={{background:"#f3e8ff",border:"none",color:"#3b0764",borderRadius:6,padding:"3px 10px",fontSize:12,cursor:"pointer"}}>Edit</button><button onClick={e=>{e.stopPropagation();saveOthers(getOthers().filter(x=>x.id!==o.id));}} style={{background:"#fee2e2",border:"none",color:"#ef4444",borderRadius:6,padding:"3px 10px",fontSize:12,cursor:"pointer"}}>Delete</button></>}>
+                  <p style={{margin:0,fontSize:14,color:"#444",lineHeight:1.8,background:"#f3e8ff",borderRadius:8,padding:"10px 12px",whiteSpace:"pre-wrap"}}>{o.text}</p>
+                </ColRow>
+              ))}
+            </div>
+          </>}
+
+        </div>
+      </div>
+    );
+  }
+
+  /* ════════════════════════ HOME VIEW ════════════════════════ */
+  return (
+    <div style={{minHeight:"100vh",background:"#f9f7ff"}}>
+      <div style={{background:"linear-gradient(135deg,#1e3a8a 0%,#3b0764 100%)",color:"#fff",padding:"24px 16px 20px",textAlign:"center"}}>
+        <h1 style={{margin:0,fontSize:26,letterSpacing:1}}>✝ 5M Faith Tracker</h1>
+        <p style={{margin:"6px 0 16px",opacity:0.8,fontSize:13}}>Mind · Mood · Matter · Ministry · Mystery</p>
+        <div style={{display:"flex",alignItems:"center",justifyContent:"center",gap:10}}>
+          <button onClick={()=>{ const d=new Date(selDate); d.setDate(d.getDate()-1); setSelDate(d.toISOString().split("T")[0]); }} style={{background:"rgba(255,255,255,0.2)",border:"none",color:"#fff",borderRadius:8,padding:"6px 12px",cursor:"pointer",fontSize:16}}>‹</button>
+          <span style={{fontSize:14,fontWeight:"bold"}}>{isToday?"Today — ":""}{new Date(selDate).toLocaleDateString("en-SG",{weekday:"long",month:"long",day:"numeric"})}</span>
+          <button onClick={()=>{ const d=new Date(selDate); d.setDate(d.getDate()+1); setSelDate(d.toISOString().split("T")[0]); }} disabled={selDate>=today()} style={{background:"rgba(255,255,255,0.2)",border:"none",color:selDate>=today()?"rgba(255,255,255,0.3)":"#fff",borderRadius:8,padding:"6px 12px",cursor:selDate>=today()?"default":"pointer",fontSize:16}}>›</button>
+        </div>
+      </div>
+      <div style={{padding:"12px 16px 0",maxWidth:600,margin:"0 auto"}}>
+        {isToday&&completedToday<5&&<div style={{background:"#fef3c7",border:"1px solid #f59e0b",borderRadius:12,padding:"10px 14px",marginBottom:4,fontSize:13,color:"#92400e"}}>🔔 You've completed <strong>{completedToday}/5</strong> sections today. Keep going!</div>}
+        {isToday&&completedToday===5&&<div style={{background:"#dcfce7",border:"1px solid #22c55e",borderRadius:12,padding:"10px 14px",marginBottom:4,fontSize:13,color:"#14532d"}}>🎉 All 5Ms done for today! Well done.</div>}
+      </div>
+      <div style={{padding:16,maxWidth:600,margin:"0 auto"}}>
+        {MS.map(m=>{
+          const entry=getEntry(m.key), hasT=!!entry.thoughts?.trim(), appN=entry.applications?.length||0, chkN=entry.applications?.filter(a=>a.checked).length||0, filled=hasT||appN>0;
+          return(
+            <div key={m.key} onClick={()=>{setActiveM(m.key);setView("detail");}} style={{background:"#fff",borderRadius:16,marginBottom:12,overflow:"hidden",boxShadow:"0 2px 10px rgba(0,0,0,0.07)",cursor:"pointer",border:`2px solid ${filled?m.accent:"#e5e7eb"}`,display:"flex"}}>
+              <div style={{background:m.color,width:70,display:"flex",flexDirection:"column",alignItems:"center",justifyContent:"center",padding:"16px 0"}}>
+                <span style={{fontSize:26}}>{m.emoji}</span>
+                <span style={{color:"#fff",fontSize:12,fontWeight:"bold",marginTop:4}}>{m.label}</span>
+              </div>
+              <div style={{flex:1,padding:"14px 16px"}}>
+                <p style={{margin:"0 0 8px",fontSize:12,color:"#888",lineHeight:1.5}}>{m.prompt.slice(0,70)}…</p>
+                <div style={{display:"flex",gap:8,flexWrap:"wrap"}}>
+                  <span style={{fontSize:11,padding:"3px 10px",borderRadius:99,background:hasT?m.light:"#f3f4f6",color:hasT?m.color:"#999",fontWeight:"bold"}}>{hasT?"✓ Reflection":"○ Reflection"}</span>
+                  <span style={{fontSize:11,padding:"3px 10px",borderRadius:99,background:appN>0?m.light:"#f3f4f6",color:appN>0?m.color:"#999",fontWeight:"bold"}}>{appN>0?`✓ ${chkN}/${appN} steps`:"○ Application"}</span>
+                </div>
+              </div>
+              <div style={{display:"flex",alignItems:"center",paddingRight:14}}><span style={{color:"#ccc",fontSize:20}}>›</span></div>
+            </div>
+          );
+        })}
+        <button onClick={()=>{setSumTab("overview");setView("progress");}} style={{width:"100%",padding:"14px",background:"linear-gradient(135deg,#3b0764,#1e3a8a)",color:"#fff",border:"none",borderRadius:14,fontSize:15,cursor:"pointer",marginTop:8,letterSpacing:0.5}}>📊 View Progress</button>
+        <button onClick={()=>setView("resources")} style={{width:"100%",padding:"14px",background:"linear-gradient(135deg,#14532d,#22c55e)",color:"#fff",border:"none",borderRadius:14,fontSize:15,cursor:"pointer",marginTop:10,letterSpacing:0.5}}>📺 Resources</button>
+      </div>
+    </div>
+  );
+}
+
+ReactDOM.createRoot(document.getElementById("root")).render(React.createElement(App));
+</script>
+</body>
+</html>
