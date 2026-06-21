@@ -179,7 +179,7 @@ function App() {
   const weekApps       = weekDates.flatMap(d=>MS.map(m=>{ const apps=data[d]?.[m.key]?.applications||[]; return apps.length>0?{date:d,m,apps}:null; }).filter(Boolean));
   const reflDates      = reflPeriod==="week"?getWeekDates():getMonthDates();
   const reflMeta       = MS.find(x=>x.key===reflM);
-  const reflEntries    = reflDates.map(d=>{ const e=data[d]?.[reflM]; if(!e?.thoughts?.trim()&&!e?.applications?.length)return null; return{date:d,thoughts:e.thoughts||"",applications:e.applications||}; }).filter(Boolean);
+  const reflEntries    = reflDates.map(d=>{ const e=data[d]?.[reflM]; if(!e?.thoughts?.trim()&&!e?.applications?.length)return null; return{date:d,thoughts:e.thoughts||"",applications:e.applications||[]}; }).filter(Boolean);
   const filteredOut    = getOutcomes().filter(o=>outFilter==="all"||o.mKey===outFilter).sort((a,b)=>b.date.localeCompare(a.date));
   const sortedOthers   = getOthers().slice().sort((a,b)=>b.date.localeCompare(a.date));
 
