@@ -7,6 +7,569 @@
 <style>
 *{box-sizing:border-box;margin:0;padding:0;}
 body{font-family:Georgia,serif;background:#f9f7ff;min-height:100vh;}
+button,input,textarea,select{font-family:Georgia,serif;}
+a{text-decoration:none;}
+.card{background:#fff;border-radius:14px;padding:18px;margin-bottom:16px;box-shadow:0 2px 8px rgba(0,0,0,0.07);}
+.hidden{display:none!important;}
+input[type=text],input[type=url],input[type=date],input[type=color]{border:2px solid #e5e7eb;border-radius:10px;padding:9px 12px;font-size:14px;outline:none;color:#333;box-sizing:border-box;}
+
+/* Rich text editor */
+.rte-wrap{border-radius:10px;overflow:hidden;}
+.rte-toolbar{display:flex;flex-wrap:wrap;gap:4px;padding:8px;background:#f3f4f6;border:2px solid #e5e7eb;border-bottom:none;border-radius:10px 10px 0 0;}
+.rte-toolbar button{background:#fff;border:1px solid #e5e7eb;borderRadius:6px;padding:4px 8px;font-size:13px;cursor:pointer;border-radius:6px;color:#333;}
+.rte-toolbar button:hover{background:#e5e7eb;}
+.rte-toolbar select{border:1px solid #e5e7eb;borderRadius:6px;padding:4px 6px;font-size:12px;cursor:pointer;border-radius:6px;background:#fff;color:#333;}
+.rte-toolbar input[type=color]{width:30px;height:28px;padding:2px;border:1px solid #e5e7eb;border-radius:6px;cursor:pointer;}
+.rte-toolbar .sep{width:1px;background:#e5e7eb;margin:2px 2px;}
+.rte-body{min-height:120px;border:2px solid #e5e7eb;border-top:none;border-radius:0 0 10px 10px;padding:12px;font-size:14px;outline:none;color:#333;line-height:1.7;overflow-y:auto;}
+.rte-body:focus{border-color:#a855f7;}
+.rte-body img{max-width:100%;border-radius:8px;margin:6px 0;}
+.rte-body a{color:#3b82f6;text-decoration:underline;}
+.rte-body iframe{width:100%;border-radius:8px;margin:6px 0;}
+</style>
+</head>
+<body>
+<div id="app"></div>
+<script>
+const MS=[
+  {key:"mind",    label:"Mind",    emoji:"🧠",color:"#1e3a8a",light:"#dbeafe",accent:"#3b82f6",prompt:"What truth, scripture, or thought is God speaking to your mind today?",            appPrompt:"How will you renew your mind or act on this truth today?"},
+  {key:"mood",    label:"Mood",    emoji:"🌤",color:"#92400e",light:"#fef3c7",accent:"#f59e0b",prompt:"How is your heart and emotional state before God right now?",                      appPrompt:"What will you do to align your emotions with God's peace today?"},
+  {key:"matter",  label:"Matter",  emoji:"🌿",color:"#14532d",light:"#dcfce7",accent:"#22c55e",prompt:"What practical life area (work, health, finances, relationships) needs God's guidance?", appPrompt:"What concrete step will you take to steward this area faithfully?"},
+  {key:"ministry",label:"Ministry",emoji:"❤️",color:"#c2410c",light:"#ffedd5",accent:"#f97316",prompt:"Who or what is God calling you to serve, encourage, or pour into today?",           appPrompt:"What specific act of service or love will you carry out?"},
+  {key:"mystery", label:"Mystery", emoji:"🌙",color:"#3b0764",light:"#f3e8ff",accent:"#a855f7",prompt:"What aspect of God's nature, a scripture, or a spiritual question is stirring wonder in you?", appPrompt:"How will you sit with or explore this mystery — through prayer, study, or surrender?"},
+];
+
+const KEY="5m_v4";
+const today=()=>new Date().toISOString().split("T")[0];
+const fmtDate=d=>new Date(d).toLocaleDateString("en-SG",{weekday:"long",month:"long",day:"numeric"});
+const fmtShort=d=>new Date(d).toLocaleDateString("en-SG",{weekday:"short",month:"short",day:"numeric"});
+const extractVid=url=>{const m=url.match(/(?:youtu\.be\/|v=|\/embed\/|\/shorts\/)([A-Za-z0-9_-]{11})/);return m?m[1]:null;};
+
+let state={
+  view:"home",activeM:null,selDate:today(),sumTab:"overview",
+  reflPeriod:"week",reflM:"mind",
+  outM:"mind",outDate:today(),outText:"",outFilter:"all",outEdit:null,
+  othDate:today(),othText:"",othTitle:"",othEdit:null,
+  resUrl:"",resDesc:"",resEditId:null,
+  openWA:{},openRfl:{},openOut:{},openOth:{},
+  expFrom:null,expTo:null,expSections:null,expOrg:"category",
+  data:loadData()
+};
+
+function loadData(){try{return JSON.parse(localStorage.getItem(KEY)||"{}");}catch{return{};}}
+function save(){try{localStorage.setItem(KEY,JSON.stringify(state.data));}catch{}}
+function set(obj){Object.assign(state,obj);render();}
+function setData(d){state.data=d;save();render();}
+function getEntry(mKey,date){return state.data[date||state.selDate]?.[mKey]||{thoughts:"",applications:[]};}
+function updField(mKey,field,val){
+  const d=state.data,s=state.selDate;
+  d[s]=d[s]||{};d[s][mKey]=d[s][mKey]||{thoughts:"",applications:[]};
+  d[s][mKey][field]=val;save();
+}
+function getOthers(){return state.data.__others||[];}
+function getOutcomes(){return state.data.__outcomes||[];}
+function getResources(){return state.data.__resources||[];}
+function saveList(key,list){state.data[key]=list;save();render();}
+function getWeekDates(){const d=new Date(),day=d.getDay();return Array.from({length:7},(_,i)=>{const x=new Date(d);x.setDate(d.getDate()-day+i);return x.toISOString().split("T")[0];});}
+function getMonthDates(){const d=new Date(),y=d.getFullYear(),mo=d.getMonth(),days=new Date(y,mo+1,0).getDate();return Array.from({length:days},(_,i)=>new Date(y,mo,i+1).toISOString().split("T")[0]);}
+function tog(mapKey,k){state[mapKey]={...state[mapKey],[k]:!state[mapKey][k]};render();}
+
+/* ── DOM helpers ── */
+function el(tag,attrs,children){
+  const e=document.createElement(tag);
+  for(const[k,v] of Object.entries(attrs||{})){
+    if(k==="style"&&typeof v==="object"){Object.assign(e.style,v);}
+    else if(k.startsWith("on")&&typeof v==="function"){e.addEventListener(k.slice(2).toLowerCase(),v);}
+    else if(k==="className"){e.className=v;}
+    else{e.setAttribute(k,v);}
+  }
+  if(children){(Array.isArray(children)?children:[children]).forEach(c=>{if(c==null||c===false)return;e.appendChild(typeof c==="string"||typeof c==="number"?document.createTextNode(c):c);});}
+  return e;
+}
+function backBtn(label,onclick){return el("button",{style:{background:"rgba(255,255,255,0.2)",border:"none",color:"#fff",borderRadius:"8px",padding:"6px 14px",cursor:"pointer",marginBottom:"12px",fontSize:"14px"},onClick:onclick},label||"← Back");}
+function pillBtn(active,color,light,accent,label,onclick){return el("button",{style:{padding:"7px 14px",borderRadius:"99px",border:`2px solid ${active?accent:"#e5e7eb"}`,background:active?light:"#fff",color:active?color:"#888",fontWeight:active?"bold":"normal",fontSize:"13px",cursor:"pointer"},onClick:onclick},label);}
+function colRow(isOpen,onToggle,accent,bg,leftEl,rightEls,contentEl){
+  const header=el("div",{style:{display:"flex",justifyContent:"space-between",alignItems:"center",padding:"10px 14px",background:isOpen?bg:"#f9fafb",cursor:"pointer"},onClick:onToggle},[
+    el("div",{style:{flex:1,minWidth:0}},leftEl),
+    el("div",{style:{display:"flex",gap:"6px",alignItems:"center",flexShrink:0}},[...(rightEls||[]),el("span",{style:{color:"#aaa",fontSize:"14px"}},isOpen?"▲":"▼")])
+  ]);
+  const wrap=el("div",{style:{borderRadius:"10px",border:"1px solid #e5e7eb",marginBottom:"10px",overflow:"hidden"}},[header]);
+  if(isOpen){wrap.appendChild(el("div",{style:{padding:"12px 14px",borderTop:`2px solid ${accent}`}},contentEl));}
+  return wrap;
+}
+
+/* ══════════════════════════
+   RICH TEXT EDITOR
+══════════════════════════ */
+function createRTE(initialHTML, onchange, accentColor){
+  const wrap=el("div",{className:"rte-wrap"});
+  const toolbar=el("div",{className:"rte-toolbar"});
+
+  // Font family
+  const fontSel=el("select",{title:"Font",onChange:e=>{document.execCommand("fontName",false,e.target.value);}},null);
+  [["Georgia","Georgia"],["Arial","Arial"],["Times New Roman","Times New Roman"],["Courier New","Courier New"],["Verdana","Verdana"],["Trebuchet MS","Trebuchet MS"]].forEach(([val,lab])=>{
+    const o=el("option",{value:val},lab);o.style.fontFamily=val;fontSel.appendChild(o);
+  });
+  toolbar.appendChild(fontSel);
+
+  // Font size
+  const sizeSel=el("select",{title:"Size",onChange:e=>{document.execCommand("fontSize",false,e.target.value);}},null);
+  [[1,"XS"],[2,"S"],[3,"M"],[4,"L"],[5,"XL"],[6,"XXL"]].forEach(([val,lab])=>{
+    sizeSel.appendChild(el("option",{value:val},lab));
+  });
+  sizeSel.value=3;
+  toolbar.appendChild(sizeSel);
+
+  toolbar.appendChild(el("div",{className:"sep"},null));
+
+  // Bold Italic Underline
+  const fmt=[["B","bold","<b>B</b>"],["I","italic","<i>I</i>"],["U","underline","<u>U</u>"]];
+  fmt.forEach(([,cmd,html])=>{
+    const b=document.createElement("button");b.innerHTML=html;b.title=cmd;
+    b.addEventListener("click",e=>{e.preventDefault();document.execCommand(cmd,false,null);body.focus();});
+    toolbar.appendChild(b);
+  });
+
+  toolbar.appendChild(el("div",{className:"sep"},null));
+
+  // Text colour
+  const colorInp=el("input",{type:"color",title:"Text colour",value:"#000000"},null);
+  colorInp.addEventListener("input",e=>{document.execCommand("foreColor",false,e.target.value);body.focus();});
+  toolbar.appendChild(colorInp);
+
+  // Highlight colour
+  const hlInp=el("input",{type:"color",title:"Highlight",value:"#ffff00"},null);
+  hlInp.addEventListener("input",e=>{document.execCommand("hiliteColor",false,e.target.value);body.focus();});
+  toolbar.appendChild(el("span",{style:{fontSize:"11px",color:"#888",alignSelf:"center"}},"🖊"));
+  toolbar.appendChild(hlInp);
+
+  toolbar.appendChild(el("div",{className:"sep"},null));
+
+  // Lists
+  const ulBtn=document.createElement("button");ulBtn.innerHTML="≡•";ulBtn.title="Bullet list";
+  ulBtn.addEventListener("click",e=>{e.preventDefault();document.execCommand("insertUnorderedList",false,null);body.focus();});
+  toolbar.appendChild(ulBtn);
+  const olBtn=document.createElement("button");olBtn.innerHTML="1.";olBtn.title="Numbered list";
+  olBtn.addEventListener("click",e=>{e.preventDefault();document.execCommand("insertOrderedList",false,null);body.focus();});
+  toolbar.appendChild(olBtn);
+
+  toolbar.appendChild(el("div",{className:"sep"},null));
+
+  // Link
+  const linkBtn=document.createElement("button");linkBtn.innerHTML="🔗";linkBtn.title="Insert link";
+  linkBtn.addEventListener("click",e=>{
+    e.preventDefault();
+    const url=prompt("Enter URL (include https://):");
+    if(url){document.execCommand("createLink",false,url);
+      // make link open in new tab
+      body.querySelectorAll("a").forEach(a=>{a.target="_blank";a.rel="noopener noreferrer";});
+    }
+    body.focus();
+  });
+  toolbar.appendChild(linkBtn);
+
+  // Image upload
+  const imgBtn=document.createElement("button");imgBtn.innerHTML="🖼";imgBtn.title="Insert image";
+  imgBtn.addEventListener("click",e=>{e.preventDefault();imgInput.click();});
+  toolbar.appendChild(imgBtn);
+  const imgInput=el("input",{type:"file",accept:"image/*",style:{display:"none"}},null);
+  imgInput.addEventListener("change",ev=>{
+    const file=ev.target.files[0];if(!file)return;
+    if(file.size>2*1024*1024){alert("Image too large. Please use an image under 2MB.");return;}
+    const reader=new FileReader();
+    reader.onload=e=>{document.execCommand("insertHTML",false,`<img src="${e.target.result}" style="max-width:100%;border-radius:8px;margin:6px 0;"/>`);onchange(body.innerHTML);};
+    reader.readAsDataURL(file);ev.target.value="";
+  });
+  toolbar.appendChild(imgInput);
+
+  // YouTube embed
+  const ytBtn=document.createElement("button");ytBtn.innerHTML="▶";ytBtn.title="Embed YouTube";
+  ytBtn.addEventListener("click",e=>{
+    e.preventDefault();
+    const url=prompt("Enter YouTube URL:");
+    if(!url)return;
+    const vid=extractVid(url);
+    if(!vid){alert("Invalid YouTube URL.");return;}
+    document.execCommand("insertHTML",false,`<br/><iframe width="100%" height="200" src="https://www.youtube.com/embed/${vid}" frameborder="0" allowfullscreen style="border-radius:8px;margin:6px 0;"></iframe><br/>`);
+    onchange(body.innerHTML);
+  });
+  toolbar.appendChild(ytBtn);
+
+  // Clear formatting
+  toolbar.appendChild(el("div",{className:"sep"},null));
+  const clearBtn=document.createElement("button");clearBtn.innerHTML="✕";clearBtn.title="Clear formatting";
+  clearBtn.addEventListener("click",e=>{e.preventDefault();document.execCommand("removeFormat",false,null);body.focus();});
+  toolbar.appendChild(clearBtn);
+
+  // Body
+  const body=el("div",{className:"rte-body"},null);
+  body.contentEditable="true";
+  body.innerHTML=initialHTML||"";
+  if(accentColor){body.style.borderColor=accentColor;}
+  body.addEventListener("focus",()=>{if(accentColor)body.style.borderColor=accentColor;});
+  body.addEventListener("input",()=>onchange(body.innerHTML));
+
+  wrap.appendChild(toolbar);
+  wrap.appendChild(body);
+  return {wrap,body};
+}
+
+/* ════════════════════════ HOME ════════════════════════ */
+function renderHome(){
+  const isToday=state.selDate===today();
+  const completedToday=MS.filter(m=>{const e=getEntry(m.key);return e.thoughts?.trim()||e.applications?.length>0;}).length;
+  const wrap=el("div",{style:{minHeight:"100vh",background:"#f9f7ff"}});
+  const prevBtn=el("button",{style:{background:"rgba(255,255,255,0.2)",border:"none",color:"#fff",borderRadius:"8px",padding:"6px 12px",cursor:"pointer",fontSize:"16px"},onClick:()=>{const d=new Date(state.selDate);d.setDate(d.getDate()-1);set({selDate:d.toISOString().split("T")[0]});}},"‹");
+  const nextBtn=el("button",{style:{background:"rgba(255,255,255,0.2)",border:"none",color:state.selDate>=today()?"rgba(255,255,255,0.3)":"#fff",borderRadius:"8px",padding:"6px 12px",cursor:state.selDate>=today()?"default":"pointer",fontSize:"16px"},onClick:()=>{if(state.selDate>=today())return;const d=new Date(state.selDate);d.setDate(d.getDate()+1);set({selDate:d.toISOString().split("T")[0]});}},"›");
+  wrap.appendChild(el("div",{style:{background:"linear-gradient(135deg,#1e3a8a 0%,#3b0764 100%)",color:"#fff",padding:"24px 16px 20px",textAlign:"center"}},[
+    el("h1",{style:{margin:0,fontSize:"26px",letterSpacing:"1px"}},"✝ 5M Faith Tracker"),
+    el("p",{style:{margin:"6px 0 16px",opacity:"0.8",fontSize:"13px"}},"Mind · Mood · Matter · Ministry · Mystery"),
+    el("div",{style:{display:"flex",alignItems:"center",justifyContent:"center",gap:"10px"}},[prevBtn,el("span",{style:{fontSize:"14px",fontWeight:"bold"}},(isToday?"Today — ":"")+fmtDate(state.selDate)),nextBtn])
+  ]));
+  const inner=el("div",{style:{padding:"16px",maxWidth:"600px",margin:"0 auto"}});
+  if(isToday&&completedToday<5)inner.appendChild(el("div",{style:{background:"#fef3c7",border:"1px solid #f59e0b",borderRadius:"12px",padding:"10px 14px",marginBottom:"8px",fontSize:"13px",color:"#92400e"}},`🔔 You've completed ${completedToday}/5 sections today. Keep going!`));
+  if(isToday&&completedToday===5)inner.appendChild(el("div",{style:{background:"#dcfce7",border:"1px solid #22c55e",borderRadius:"12px",padding:"10px 14px",marginBottom:"8px",fontSize:"13px",color:"#14532d"}},"🎉 All 5Ms done for today! Well done."));
+  MS.forEach(m=>{
+    const entry=getEntry(m.key);
+    const hasT=!!(entry.thoughts&&entry.thoughts.replace(/<[^>]*>/g,"").trim());
+    const appN=entry.applications?.length||0,chkN=entry.applications?.filter(a=>a.checked).length||0,filled=hasT||appN>0;
+    inner.appendChild(el("div",{style:{background:"#fff",borderRadius:"16px",marginBottom:"12px",overflow:"hidden",boxShadow:"0 2px 10px rgba(0,0,0,0.07)",cursor:"pointer",border:`2px solid ${filled?m.accent:"#e5e7eb"}`,display:"flex"},onClick:()=>set({view:"detail",activeM:m.key})},[
+      el("div",{style:{background:m.color,width:"70px",display:"flex",flexDirection:"column",alignItems:"center",justifyContent:"center",padding:"16px 0"}},[el("span",{style:{fontSize:"26px"}},m.emoji),el("span",{style:{color:"#fff",fontSize:"12px",fontWeight:"bold",marginTop:"4px"}},m.label)]),
+      el("div",{style:{flex:1,padding:"14px 16px"}},[
+        el("p",{style:{margin:"0 0 8px",fontSize:"12px",color:"#888",lineHeight:"1.5"}},m.prompt.slice(0,70)+"…"),
+        el("div",{style:{display:"flex",gap:"8px",flexWrap:"wrap"}},[
+          el("span",{style:{fontSize:"11px",padding:"3px 10px",borderRadius:"99px",background:hasT?m.light:"#f3f4f6",color:hasT?m.color:"#999",fontWeight:"bold"}},hasT?"✓ Reflection":"○ Reflection"),
+          el("span",{style:{fontSize:"11px",padding:"3px 10px",borderRadius:"99px",background:appN>0?m.light:"#f3f4f6",color:appN>0?m.color:"#999",fontWeight:"bold"}},appN>0?`✓ ${chkN}/${appN} steps`:"○ Application"),
+        ])
+      ]),
+      el("div",{style:{display:"flex",alignItems:"center",paddingRight:"14px"}},el("span",{style:{color:"#ccc",fontSize:"20px"}},"›"))
+    ]));
+  });
+  inner.appendChild(el("button",{style:{width:"100%",padding:"14px",background:"linear-gradient(135deg,#3b0764,#1e3a8a)",color:"#fff",border:"none",borderRadius:"14px",fontSize:"15px",cursor:"pointer",marginTop:"8px",letterSpacing:"0.5px"},onClick:()=>set({view:"progress",sumTab:"overview"})},"📊 View Progress"));
+  inner.appendChild(el("button",{style:{width:"100%",padding:"14px",background:"linear-gradient(135deg,#14532d,#22c55e)",color:"#fff",border:"none",borderRadius:"14px",fontSize:"15px",cursor:"pointer",marginTop:"10px",letterSpacing:"0.5px"},onClick:()=>set({view:"resources"})},"📺 Resources"));
+  wrap.appendChild(inner);
+  return wrap;
+}
+
+/* ════════════════════════ DETAIL ════════════════════════ */
+function renderDetail(){
+  const m=MS.find(x=>x.key===state.activeM);
+  const entry=getEntry(m.key);
+  const wrap=el("div",{style:{minHeight:"100vh",background:m.light}});
+  wrap.appendChild(el("div",{style:{background:m.color,color:"#fff",padding:"20px 16px 16px"}},[
+    backBtn("← Back",()=>set({view:"home"})),
+    el("div",{style:{fontSize:"36px"}},m.emoji),
+    el("h2",{style:{margin:"4px 0 0",fontSize:"24px"}},m.label),
+    el("p",{style:{margin:"4px 0 0",opacity:"0.85",fontSize:"13px"}},state.selDate)
+  ]));
+  const inner=el("div",{style:{padding:"16px",maxWidth:"600px",margin:"0 auto"}});
+
+  // Reflection card with RTE
+  const reflCard=el("div",{className:"card"});
+  reflCard.appendChild(el("p",{style:{color:m.color,fontWeight:"bold",fontSize:"14px",marginBottom:"8px"}},"✦ Today's Reflection"));
+  reflCard.appendChild(el("p",{style:{color:"#444",fontSize:"14px",lineHeight:"1.6",margin:"0 0 12px"}},m.prompt));
+  const {wrap:rteWrap}=createRTE(entry.thoughts||"",html=>{updField(m.key,"thoughts",html);},m.accent);
+  reflCard.appendChild(rteWrap);
+  inner.appendChild(reflCard);
+
+  // Application card
+  const appCard=el("div",{className:"card"});
+  appCard.appendChild(el("p",{style:{color:m.color,fontWeight:"bold",fontSize:"14px",marginBottom:"4px"}},"✦ Application Steps"));
+  appCard.appendChild(el("p",{style:{color:"#888",fontSize:"13px",lineHeight:"1.5",margin:"0 0 14px"}},m.appPrompt));
+  renderCheckboxList(appCard,entry.applications||[],m,m.key);
+  inner.appendChild(appCard);
+  wrap.appendChild(inner);
+  return wrap;
+}
+
+function renderCheckboxList(parent,items,m,mKey){
+  const listWrap=el("div",{});
+  items.forEach((a,i)=>{
+    listWrap.appendChild(el("div",{style:{display:"flex",alignItems:"flex-start",gap:"10px",marginBottom:"10px",padding:"10px 12px",background:a.checked?m.light:"#f9fafb",borderRadius:"10px",border:`1px solid ${a.checked?m.accent:"#e5e7eb"}`}},[
+      el("div",{style:{width:"20px",height:"20px",borderRadius:"5px",border:`2px solid ${a.checked?m.accent:"#d1d5db"}`,background:a.checked?m.accent:"#fff",display:"flex",alignItems:"center",justifyContent:"center",cursor:"pointer",flexShrink:"0",marginTop:"1px"},onClick:()=>{const apps=[...getEntry(mKey).applications];apps[i]={...apps[i],checked:!apps[i].checked};updField(mKey,"applications",apps);render();}},a.checked?el("span",{style:{color:"#fff",fontSize:"13px",lineHeight:"1"}},"✓"):null),
+      el("span",{style:{flex:1,fontSize:"14px",color:a.checked?"#6b7280":"#333",textDecoration:a.checked?"line-through":"none",lineHeight:"1.5"}},a.text),
+      el("button",{style:{background:"none",border:"none",color:"#d1d5db",cursor:"pointer",fontSize:"16px",padding:"0",lineHeight:"1",flexShrink:"0"},onClick:()=>{const apps=getEntry(mKey).applications.filter((_,j)=>j!==i);updField(mKey,"applications",apps);render();}},"×")
+    ]));
+  });
+  const inputRow=el("div",{style:{display:"flex",gap:"8px",marginTop:"4px"}});
+  const inp=el("input",{type:"text",placeholder:"Add an application step...",style:{flex:1,border:`2px solid ${m.accent}`,borderRadius:"10px",padding:"9px 12px",fontSize:"14px",outline:"none",color:"#333"}},null);
+  function addApp(){const t=inp.value.trim();if(!t)return;const apps=[...getEntry(mKey).applications,{id:Date.now(),text:t,checked:false}];updField(mKey,"applications",apps);inp.value="";render();}
+  inp.addEventListener("keydown",e=>{if(e.key==="Enter")addApp();});
+  inputRow.appendChild(inp);
+  inputRow.appendChild(el("button",{style:{background:m.accent,color:"#fff",border:"none",borderRadius:"10px",padding:"9px 16px",fontSize:"14px",cursor:"pointer",fontWeight:"bold"},onClick:addApp},"+"));
+  parent.appendChild(listWrap);
+  parent.appendChild(inputRow);
+}
+
+/* ════════════════════════ PROGRESS ════════════════════════ */
+function renderProgress(){
+  const wrap=el("div",{style:{minHeight:"100vh",background:"#f8f5ff"}});
+  const hdr=el("div",{style:{background:"#3b0764",color:"#fff",padding:"20px 16px 0"}});
+  hdr.appendChild(backBtn("← Back",()=>set({view:"home"})));
+  hdr.appendChild(el("h2",{style:{margin:0,fontSize:"22px"}},"📊 Progress"));
+  hdr.appendChild(el("p",{style:{margin:"4px 0 16px",opacity:"0.8",fontSize:"13px"}},"Your faith journey overview"));
+  const tabRow=el("div",{style:{display:"flex",gap:"4px",overflowX:"auto"}});
+  ["overview","reflections","outcomes","others","export"].forEach(t=>{
+    tabRow.appendChild(el("button",{style:{padding:"10px 16px",background:state.sumTab===t?"#fff":"transparent",color:state.sumTab===t?"#3b0764":"rgba(255,255,255,0.75)",border:"none",borderRadius:"10px 10px 0 0",cursor:"pointer",fontSize:"13px",fontWeight:state.sumTab===t?"bold":"normal",whiteSpace:"nowrap"},onClick:()=>set({sumTab:t})},t.charAt(0).toUpperCase()+t.slice(1)));
+  });
+  hdr.appendChild(tabRow);
+  wrap.appendChild(hdr);
+  const inner=el("div",{style:{padding:"16px",maxWidth:"600px",margin:"0 auto"}});
+  if(state.sumTab==="overview")renderOverview(inner);
+  else if(state.sumTab==="reflections")renderReflections(inner);
+  else if(state.sumTab==="outcomes")renderOutcomes(inner);
+  else if(state.sumTab==="others")renderOthers(inner);
+  else if(state.sumTab==="export")renderExport(inner);
+  wrap.appendChild(inner);
+  return wrap;
+}
+
+function renderOverview(inner){
+  const weekDates=getWeekDates();
+  // Backup
+  const bkCard=el("div",{className:"card"});
+  bkCard.appendChild(el("p",{style:{color:"#3b0764",fontWeight:"bold",fontSize:"15px",margin:"0 0 6px"}},"🗄 Backup & Restore"));
+  bkCard.appendChild(el("p",{style:{color:"#888",fontSize:"13px",margin:"0 0 14px",lineHeight:"1.5"}},"Export your data to back it up or transfer to another device."));
+  const bRow=el("div",{style:{display:"flex",gap:"8px"}});
+  bRow.appendChild(el("button",{style:{flex:1,padding:"10px 0",background:"#3b0764",color:"#fff",border:"none",borderRadius:"10px",fontSize:"14px",cursor:"pointer",fontWeight:"bold"},onClick:()=>{const blob=new Blob([JSON.stringify(state.data,null,2)],{type:"application/json"});const url=URL.createObjectURL(blob),a=document.createElement("a");a.href=url;a.download="5M-Backup-"+today()+".json";a.click();URL.revokeObjectURL(url);}},"⬇ Export Backup"));
+  const restLabel=el("label",{style:{flex:1,padding:"10px 0",background:"#f3e8ff",color:"#3b0764",border:"2px solid #a855f7",borderRadius:"10px",fontSize:"14px",cursor:"pointer",fontWeight:"bold",textAlign:"center",display:"block"}},"⬆ Restore Backup");
+  const restInput=el("input",{type:"file",accept:".json",style:{display:"none"}},null);
+  restInput.addEventListener("change",e=>{const file=e.target.files[0];if(!file)return;const r=new FileReader();r.onload=ev=>{try{const p=JSON.parse(ev.target.result);if(confirm("Replace all data with backup?")){setData(p);alert("✅ Restored!");}}catch{alert("❌ Invalid file.");}};r.readAsText(file);e.target.value="";});
+  restLabel.appendChild(restInput);bRow.appendChild(restLabel);bkCard.appendChild(bRow);inner.appendChild(bkCard);
+
+  // Daily completion chart
+  const dcCard=el("div",{className:"card"});
+  dcCard.appendChild(el("p",{style:{color:"#3b0764",fontWeight:"bold",fontSize:"15px",margin:"0 0 14px"}},"Daily Completion"));
+  const barRow=el("div",{style:{display:"flex",gap:"8px",justifyContent:"space-between"}});
+  weekDates.forEach(d=>{
+    const count=MS.filter(m=>{const e=state.data[d]?.[m.key];const t=e?.thoughts;const hasT=t&&t.replace(/<[^>]*>/g,"").trim();return hasT||e?.applications?.length>0;}).length;
+    const col=el("div",{style:{flex:1,textAlign:"center"}});
+    const bw=el("div",{style:{height:"80px",background:"#f3e8ff",borderRadius:"8px",display:"flex",alignItems:"flex-end",overflow:"hidden"}});
+    bw.appendChild(el("div",{style:{width:"100%",height:`${(count/5)*100}%`,background:"#a855f7",borderRadius:"8px 8px 0 0"}},null));
+    col.appendChild(bw);
+    col.appendChild(el("p",{style:{fontSize:"11px",color:"#666",margin:"4px 0 0"}},new Date(d).toLocaleDateString("en-SG",{weekday:"short"})));
+    col.appendChild(el("p",{style:{fontSize:"12px",color:"#a855f7",margin:0,fontWeight:"bold"}},`${count}/5`));
+    barRow.appendChild(col);
+  });
+  dcCard.appendChild(barRow);inner.appendChild(dcCard);
+
+  // Progress by section
+  const psCard=el("div",{className:"card"});
+  psCard.appendChild(el("p",{style:{color:"#3b0764",fontWeight:"bold",fontSize:"15px",margin:"0 0 14px"}},"Progress by Section"));
+  MS.forEach(m=>{
+    const count=weekDates.filter(d=>{const e=state.data[d]?.[m.key];const t=e?.thoughts;return(t&&t.replace(/<[^>]*>/g,"").trim())||e?.applications?.length>0;}).length;
+    const row=el("div",{style:{marginBottom:"12px"}});
+    row.appendChild(el("div",{style:{display:"flex",justifyContent:"space-between",marginBottom:"4px"}},[el("span",{style:{fontSize:"14px",color:m.color,fontWeight:"bold"}},`${m.emoji} ${m.label}`),el("span",{style:{fontSize:"13px",color:"#666"}},`${count}/7 days`)]));
+    const bar=el("div",{style:{background:m.light,borderRadius:"99px",height:"10px"}});
+    bar.appendChild(el("div",{style:{width:`${(count/7)*100}%`,background:m.accent,height:"10px",borderRadius:"99px"}},null));
+    row.appendChild(bar);psCard.appendChild(row);
+  });
+  inner.appendChild(psCard);
+
+  // Applications this week
+  const appsCard=el("div",{className:"card"});
+  appsCard.appendChild(el("p",{style:{color:"#3b0764",fontWeight:"bold",fontSize:"15px",margin:"0 0 14px"}},"✦ Applications This Week"));
+  const weekApps=weekDates.flatMap(d=>MS.map(m=>{const apps=state.data[d]?.[m.key]?.applications||[];return apps.length>0?{date:d,m,apps}:null;}).filter(Boolean));
+  if(weekApps.length===0)appsCard.appendChild(el("p",{style:{color:"#999",fontSize:"14px",fontStyle:"italic"}},"No applications recorded yet this week."));
+  else weekApps.forEach((item,i)=>{
+    appsCard.appendChild(colRow(!!state.openWA[i],()=>tog("openWA",i),item.m.accent,item.m.light,
+      el("div",{style:{display:"flex",gap:"8px",alignItems:"center",flexWrap:"wrap"}},[el("span",{style:{fontSize:"13px",fontWeight:"bold",color:item.m.color}},`${item.m.emoji} ${item.m.label}`),el("span",{style:{fontSize:"11px",color:"#999"}},fmtShort(item.date)),el("span",{style:{fontSize:"11px",background:item.m.light,color:item.m.color,borderRadius:"99px",padding:"2px 8px"}},`${item.apps.filter(a=>a.checked).length}/${item.apps.length} done`)]),
+      null,
+      item.apps.map(a=>el("div",{style:{display:"flex",alignItems:"center",gap:"8px",marginBottom:"5px"}},[el("div",{style:{width:"16px",height:"16px",borderRadius:"4px",border:`2px solid ${item.m.accent}`,background:a.checked?item.m.accent:"#fff",display:"flex",alignItems:"center",justifyContent:"center",flexShrink:"0"}},a.checked?el("span",{style:{color:"#fff",fontSize:"10px"}},"✓"):null),el("span",{style:{fontSize:"13px",color:a.checked?"#9ca3af":"#444",textDecoration:a.checked?"line-through":"none"}},a.text)]))
+    ));
+  });
+  inner.appendChild(appsCard);
+}
+
+function renderReflections(inner){
+  const reflDates=state.reflPeriod==="week"?getWeekDates():getMonthDates();
+  const reflMeta=MS.find(x=>x.key===state.reflM);
+  const reflEntries=reflDates.map(d=>{const e=state.data[d]?.[state.reflM];const t=e?.thoughts;if(!(t&&t.replace(/<[^>]*>/g,"").trim())&&!e?.applications?.length)return null;return{date:d,thoughts:t||"",applications:e.applications||[]};}).filter(Boolean);
+  const filterCard=el("div",{className:"card"});
+  filterCard.appendChild(el("p",{style:{color:"#3b0764",fontWeight:"bold",fontSize:"14px",margin:"0 0 12px"}},"Filter Reflections"));
+  filterCard.appendChild(el("p",{style:{fontSize:"12px",color:"#888",margin:"0 0 6px"}},"Period"));
+  const pRow=el("div",{style:{display:"flex",gap:"8px",marginBottom:"14px"}});
+  [{id:"week",label:"This Week"},{id:"month",label:"This Month"}].forEach(p=>{pRow.appendChild(el("button",{style:{flex:1,padding:"8px 0",borderRadius:"10px",border:`2px solid ${state.reflPeriod===p.id?"#3b0764":"#e5e7eb"}`,background:state.reflPeriod===p.id?"#3b0764":"#fff",color:state.reflPeriod===p.id?"#fff":"#666",fontSize:"13px",cursor:"pointer"},onClick:()=>set({reflPeriod:p.id})},p.label));});
+  filterCard.appendChild(pRow);
+  filterCard.appendChild(el("p",{style:{fontSize:"12px",color:"#888",margin:"0 0 8px"}},"Section"));
+  const mRow=el("div",{style:{display:"flex",gap:"8px",flexWrap:"wrap"}});
+  MS.forEach(m=>mRow.appendChild(pillBtn(state.reflM===m.key,m.color,m.light,m.accent,`${m.emoji} ${m.label}`,()=>set({reflM:m.key}))));
+  filterCard.appendChild(mRow);inner.appendChild(filterCard);
+
+  const listCard=el("div",{className:"card"});
+  listCard.appendChild(el("div",{style:{display:"flex",alignItems:"center",gap:"10px",marginBottom:"16px"}},[
+    el("div",{style:{background:reflMeta.color,borderRadius:"10px",width:"38px",height:"38px",display:"flex",alignItems:"center",justifyContent:"center",fontSize:"20px"}},reflMeta.emoji),
+    el("div",null,[el("p",{style:{margin:0,fontWeight:"bold",color:reflMeta.color,fontSize:"15px"}},`${reflMeta.label} Reflections`),el("p",{style:{margin:0,fontSize:"12px",color:"#999"}},(state.reflPeriod==="week"?"This week":new Date().toLocaleDateString("en-SG",{month:"long",year:"numeric"}))+` · ${reflEntries.length} entr${reflEntries.length===1?"y":"ies"}`)])
+  ]));
+  if(reflEntries.length===0)listCard.appendChild(el("p",{style:{color:"#999",fontSize:"14px",fontStyle:"italic"}},`No ${reflMeta.label} reflections for this period.`));
+  else reflEntries.forEach((entry,i)=>{
+    const children=[];
+    if(entry.thoughts){
+      const div=el("div",{style:{marginBottom:entry.applications.length>0?"10px":"0"}});
+      div.appendChild(el("p",{style:{margin:"0 0 4px",fontSize:"11px",color:"#aaa",textTransform:"uppercase",letterSpacing:"0.5px"}},"Reflection"));
+      const content=el("div",{style:{fontSize:"14px",color:"#444",lineHeight:"1.7",background:reflMeta.light,borderRadius:"8px",padding:"10px 12px"}});
+      content.innerHTML=entry.thoughts;
+      div.appendChild(content);children.push(div);
+    }
+    if(entry.applications.length>0){
+      const aw=el("div",null,[el("p",{style:{margin:"0 0 6px",fontSize:"11px",color:"#aaa",textTransform:"uppercase",letterSpacing:"0.5px"}},"Application Steps")]);
+      entry.applications.forEach(a=>{aw.appendChild(el("div",{style:{display:"flex",alignItems:"center",gap:"8px",marginBottom:"5px"}},[el("div",{style:{width:"16px",height:"16px",borderRadius:"4px",border:`2px solid ${reflMeta.accent}`,background:a.checked?reflMeta.accent:"#fff",display:"flex",alignItems:"center",justifyContent:"center",flexShrink:"0"}},a.checked?el("span",{style:{color:"#fff",fontSize:"10px"}},"✓"):null),el("span",{style:{fontSize:"13px",color:a.checked?"#9ca3af":"#444",textDecoration:a.checked?"line-through":"none"}},a.text)]));});
+      children.push(aw);
+    }
+    listCard.appendChild(colRow(!!state.openRfl[i],()=>tog("openRfl",i),reflMeta.accent,reflMeta.light,el("span",{style:{fontSize:"13px",fontWeight:"bold",color:reflMeta.color}},new Date(entry.date).toLocaleDateString("en-SG",{weekday:"long",month:"short",day:"numeric"})),null,children));
+  });
+  inner.appendChild(listCard);
+}
+
+function renderOutcomes(inner){
+  const outMeta=MS.find(m=>m.key===state.outM);
+  const formCard=el("div",{className:"card"});
+  formCard.appendChild(el("p",{style:{color:"#3b0764",fontWeight:"bold",fontSize:"15px",margin:"0 0 14px"}},state.outEdit!==null?"✏️ Edit Outcome":"✦ Record an Outcome"));
+  formCard.appendChild(el("p",{style:{fontSize:"12px",color:"#888",margin:"0 0 8px"}},"Which M section?"));
+  const mRow=el("div",{style:{display:"flex",gap:"8px",flexWrap:"wrap",marginBottom:"14px"}});
+  MS.forEach(m=>mRow.appendChild(pillBtn(state.outM===m.key,m.color,m.light,m.accent,`${m.emoji} ${m.label}`,()=>set({outM:m.key}))));
+  formCard.appendChild(mRow);
+  formCard.appendChild(el("p",{style:{fontSize:"12px",color:"#888",margin:"0 0 6px"}},"Date of completion"));
+  const dateInp=el("input",{type:"date",max:today(),style:{width:"100%",marginBottom:"14px"}},null);
+  dateInp.value=state.outDate;dateInp.addEventListener("change",e=>set({outDate:e.target.value}));
+  formCard.appendChild(dateInp);
+  formCard.appendChild(el("p",{style:{fontSize:"12px",color:"#888",margin:"0 0 6px"}},"Outcome"));
+  let outHTML=state.outText||"";
+  const {wrap:rteOut,body:rteOutBody}=createRTE(outHTML,html=>{state.outText=html;},outMeta.accent);
+  formCard.appendChild(rteOut);
+  const btnRow=el("div",{style:{display:"flex",gap:"8px",marginTop:"12px"}});
+  btnRow.appendChild(el("button",{style:{flex:1,padding:"11px 0",background:outMeta.color,color:"#fff",border:"none",borderRadius:"10px",fontSize:"14px",cursor:"pointer",fontWeight:"bold"},onClick:()=>{
+    const txt=rteOutBody.innerHTML;if(!txt||!rteOutBody.innerText.trim())return;
+    const list=getOutcomes();
+    if(state.outEdit!==null){saveList("__outcomes",list.map(o=>o.id===state.outEdit?{...o,mKey:state.outM,date:state.outDate,text:txt}:o));set({outEdit:null,outText:""});}
+    else{saveList("__outcomes",[...list,{id:Date.now(),mKey:state.outM,date:state.outDate,text:txt}]);set({outText:""});}
+  }},state.outEdit!==null?"Save Changes":"Save Outcome"));
+  if(state.outEdit!==null)btnRow.appendChild(el("button",{style:{padding:"11px 16px",background:"#f3f4f6",color:"#666",border:"none",borderRadius:"10px",fontSize:"14px",cursor:"pointer"},onClick:()=>set({outEdit:null,outText:"",outDate:today(),outM:"mind"})},"Cancel"));
+  formCard.appendChild(btnRow);inner.appendChild(formCard);
+
+  const listCard=el("div",{className:"card"});
+  const filtered=getOutcomes().filter(o=>state.outFilter==="all"||o.mKey===state.outFilter).sort((a,b)=>b.date.localeCompare(a.date));
+  listCard.appendChild(el("div",{style:{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:"12px"}},[el("p",{style:{color:"#3b0764",fontWeight:"bold",fontSize:"15px",margin:0}},"Recorded Outcomes"),el("span",{style:{fontSize:"12px",color:"#999"}},`${filtered.length} entr${filtered.length===1?"y":"ies"}`)]));
+  const fRow=el("div",{style:{display:"flex",gap:"6px",flexWrap:"wrap",marginBottom:"16px"}});
+  fRow.appendChild(el("button",{style:{padding:"5px 12px",borderRadius:"99px",border:`2px solid ${state.outFilter==="all"?"#3b0764":"#e5e7eb"}`,background:state.outFilter==="all"?"#3b0764":"#fff",color:state.outFilter==="all"?"#fff":"#888",fontSize:"12px",cursor:"pointer"},onClick:()=>set({outFilter:"all"})},"All"));
+  MS.forEach(m=>fRow.appendChild(el("button",{style:{padding:"5px 12px",borderRadius:"99px",border:`2px solid ${state.outFilter===m.key?m.accent:"#e5e7eb"}`,background:state.outFilter===m.key?m.light:"#fff",color:state.outFilter===m.key?m.color:"#888",fontSize:"12px",cursor:"pointer",fontWeight:state.outFilter===m.key?"bold":"normal"},onClick:()=>set({outFilter:m.key})},`${m.emoji} ${m.label}`)));
+  listCard.appendChild(fRow);
+  if(filtered.length===0)listCard.appendChild(el("p",{style:{color:"#999",fontSize:"14px",fontStyle:"italic"}},"No outcomes recorded yet."));
+  else filtered.forEach(o=>{
+    const m=MS.find(x=>x.key===o.mKey);
+    const content=el("div",{style:{fontSize:"14px",color:"#444",lineHeight:"1.7",background:m.light,borderRadius:"8px",padding:"10px 12px"}});
+    content.innerHTML=o.text||"";
+    listCard.appendChild(colRow(!!state.openOut[o.id],()=>tog("openOut",o.id),m.accent,m.light,
+      el("div",null,[el("span",{style:{fontSize:"13px",fontWeight:"bold",color:m.color}},`${m.emoji} ${m.label}`),el("span",{style:{fontSize:"11px",color:"#999",marginLeft:"8px"}},new Date(o.date).toLocaleDateString("en-SG",{day:"numeric",month:"short",year:"numeric"}))]),
+      [el("button",{style:{background:m.light,border:"none",color:m.color,borderRadius:"6px",padding:"3px 10px",fontSize:"12px",cursor:"pointer"},onClick:e=>{e.stopPropagation();set({outEdit:o.id,outM:o.mKey,outDate:o.date,outText:o.text});}},"Edit"),el("button",{style:{background:"#fee2e2",border:"none",color:"#ef4444",borderRadius:"6px",padding:"3px 10px",fontSize:"12px",cursor:"pointer"},onClick:e=>{e.stopPropagation();saveList("__outcomes",getOutcomes().filter(x=>x.id!==o.id));}},"Delete")],
+      content
+    ));
+  });
+  inner.appendChild(listCard);
+}
+
+function renderOthers(inner){
+  const formCard=el("div",{className:"card"});
+  formCard.appendChild(el("p",{style:{color:"#3b0764",fontWeight:"bold",fontSize:"15px",margin:"0 0 14px"}},state.othEdit!==null?"✏️ Edit Entry":"✦ New Entry"));
+  formCard.appendChild(el("p",{style:{fontSize:"12px",color:"#888",margin:"0 0 6px"}},"Title (optional)"));
+  const titleInp=el("input",{type:"text",placeholder:"e.g. Morning Prayer, Random Thought...",style:{width:"100%",marginBottom:"14px"}},null);
+  titleInp.value=state.othTitle;titleInp.addEventListener("input",e=>{state.othTitle=e.target.value;});
+  formCard.appendChild(titleInp);
+  formCard.appendChild(el("p",{style:{fontSize:"12px",color:"#888",margin:"0 0 6px"}},"Date"));
+  const dateInp=el("input",{type:"date",max:today(),style:{width:"100%",marginBottom:"14px"}},null);
+  dateInp.value=state.othDate;dateInp.addEventListener("change",e=>set({othDate:e.target.value}));
+  formCard.appendChild(dateInp);
+  formCard.appendChild(el("p",{style:{fontSize:"12px",color:"#888",margin:"0 0 6px"}},"Your thoughts or prayer"));
+  let othHTML=state.othText||"";
+  const {wrap:rteOth,body:rteOthBody}=createRTE(othHTML,html=>{state.othText=html;},"#a855f7");
+  formCard.appendChild(rteOth);
+  const btnRow=el("div",{style:{display:"flex",gap:"8px",marginTop:"12px"}});
+  btnRow.appendChild(el("button",{style:{flex:1,padding:"11px 0",background:"#3b0764",color:"#fff",border:"none",borderRadius:"10px",fontSize:"14px",cursor:"pointer",fontWeight:"bold"},onClick:()=>{
+    const txt=rteOthBody.innerHTML;if(!txt||!rteOthBody.innerText.trim())return;
+    const list=getOthers();
+    if(state.othEdit!==null){saveList("__others",list.map(o=>o.id===state.othEdit?{...o,date:state.othDate,title:state.othTitle.trim(),text:txt}:o));set({othEdit:null,othText:"",othTitle:"",othDate:today()});}
+    else{saveList("__others",[...list,{id:Date.now(),date:state.othDate,title:state.othTitle.trim(),text:txt}]);set({othText:"",othTitle:"",othDate:today()});}
+  }},state.othEdit!==null?"Save Changes":"Save Entry"));
+  if(state.othEdit!==null)btnRow.appendChild(el("button",{style:{padding:"11px 16px",background:"#f3f4f6",color:"#666",border:"none",borderRadius:"10px",fontSize:"14px",cursor:"pointer"},onClick:()=>set({othEdit:null,othText:"",othTitle:"",othDate:today()})},"Cancel"));
+  formCard.appendChild(btnRow);inner.appendChild(formCard);
+
+  const listCard=el("div",{className:"card"});
+  const sorted=getOthers().slice().sort((a,b)=>b.date.localeCompare(a.date));
+  listCard.appendChild(el("div",{style:{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:"16px"}},[el("p",{style:{color:"#3b0764",fontWeight:"bold",fontSize:"15px",margin:0}},"All Entries"),el("span",{style:{fontSize:"12px",color:"#999"}},`${sorted.length} entr${sorted.length===1?"y":"ies"}`)]));
+  if(sorted.length===0)listCard.appendChild(el("p",{style:{color:"#999",fontSize:"14px",fontStyle:"italic"}},"No entries yet. Start by adding one above!"));
+  else sorted.forEach(o=>{
+    const content=el("div",{style:{fontSize:"14px",color:"#444",lineHeight:"1.8",background:"#f3e8ff",borderRadius:"8px",padding:"10px 12px"}});
+    content.innerHTML=o.text||"";
+    listCard.appendChild(colRow(!!state.openOth[o.id],()=>tog("openOth",o.id),"#a855f7","#f3e8ff",
+      el("div",null,[o.title?el("p",{style:{margin:"0 0 2px",fontSize:"13px",fontWeight:"bold",color:"#3b0764"}},o.title):null,el("p",{style:{margin:0,fontSize:"11px",color:"#999"}},new Date(o.date).toLocaleDateString("en-SG",{weekday:"short",day:"numeric",month:"short",year:"numeric"}))]),
+      [el("button",{style:{background:"#f3e8ff",border:"none",color:"#3b0764",borderRadius:"6px",padding:"3px 10px",fontSize:"12px",cursor:"pointer"},onClick:e=>{e.stopPropagation();set({othEdit:o.id,othDate:o.date,othTitle:o.title||"",othText:o.text,sumTab:"others"});}},"Edit"),el("button",{style:{background:"#fee2e2",border:"none",color:"#ef4444",borderRadius:"6px",padding:"3px 10px",fontSize:"12px",cursor:"pointer"},onClick:e=>{e.stopPropagation();saveList("__others",getOthers().filter(x=>x.id!==o.id));}},"Delete")],
+      content
+    ));
+  });
+  inner.appendChild(listCard);
+}
+
+/* ════════════════════════ RESOURCES ════════════════════════ */
+function renderResources(){
+  const resources=getResources();
+  const wrap=el("div",{style:{minHeight:"100vh",background:"#f0fdf4"}});
+  wrap.appendChild(el("div",{style:{background:"#14532d",color:"#fff",padding:"20px 16px 16px"}},[backBtn("← Back",()=>set({view:"home"})),el("h2",{style:{margin:0,fontSize:"22px"}},"📺 Resources"),el("p",{style:{margin:"4px 0 0",opacity:"0.8",fontSize:"13px"}},"Your faith video library")]));
+  const inner=el("div",{style:{padding:"16px",maxWidth:"600px",margin:"0 auto"}});
+  inner.appendChild(el("div",{style:{background:"#fef9c3",border:"1px solid #ca8a04",borderRadius:"12px",padding:"10px 14px",marginBottom:"16px",fontSize:"13px",color:"#713f12",lineHeight:"1.6"}},"💡 Tip: Tap ▶ New Tab to open YouTube in a new Safari tab — then switch back here and audio keeps playing!"));
+  const formCard=el("div",{className:"card"});
+  formCard.appendChild(el("p",{style:{color:"#14532d",fontWeight:"bold",fontSize:"15px",margin:"0 0 14px"}},state.resEditId!==null?"✏️ Edit Resource":"✦ Add YouTube Video"));
+  formCard.appendChild(el("p",{style:{fontSize:"12px",color:"#888",margin:"0 0 6px"}},"YouTube URL"));
+  const urlInp=el("input",{type:"url",placeholder:"https://www.youtube.com/watch?v=...",style:{width:"100%",border:"2px solid #22c55e",marginBottom:"12px"}},null);
+  urlInp.value=state.resUrl;urlInp.addEventListener("input",e=>{state.resUrl=e.target.value;});
+  formCard.appendChild(urlInp);
+  formCard.appendChild(el("p",{style:{fontSize:"12px",color:"#888",margin:"0 0 6px"}},"Short description"));
+  const descTA=el("textarea",{placeholder:"e.g. Sunday sermon on grace...",style:{width:"100%",border:"2px solid #22c55e",borderRadius:"10px",padding:"9px 12px",minHeight:"70px",resize:"vertical",marginBottom:"12px",fontSize:"14px",outline:"none",color:"#333"}},null);
+  descTA.value=state.resDesc;descTA.addEventListener("input",e=>{state.resDesc=e.target.value;});
+  formCard.appendChild(descTA);
+  const resBtnRow=el("div",{style:{display:"flex",gap:"8px"}});
+  resBtnRow.appendChild(el("button",{style:{flex:1,padding:"11px 0",background:"#14532d",color:"#fff",border:"none",borderRadius:"10px",fontSize:"14px",cursor:"pointer",fontWeight:"bold"},onClick:()=>{const vid=extractVid(state.resUrl.trim());if(!vid){alert("Please enter a valid YouTube URL.");return;}const list=getResources();if(state.resEditId!==null){saveList("__resources",list.map(r=>r.id===state.resEditId?{...r,url:state.resUrl.trim(),vid,desc:state.resDesc.trim()}:r));set({resEditId:null,resUrl:"",resDesc:""});}else{saveList("__resources",[...list,{id:Date.now(),url:state.resUrl.trim(),vid,desc:state.resDesc.trim()}]);set({resUrl:"",resDesc:""});}},},state.resEditId!==null?"Save Changes":"Add Video"));
+  if(state.resEditId!==null)resBtnRow.appendChild(el("button",{style:{padding:"11px 16px",background:"#f3f4f6",color:"#666",border:"none",borderRadius:"10px",fontSize:"14px",cursor:"pointer"},onClick:()=>set({resEditId:null,resUrl:"",resDesc:""})},"Cancel"));
+  formCard.appendChild(resBtnRow);inner.appendChild(formCard);
+  if(resources.length===0)inner.appendChild(el("div",{style:{textAlign:"center",padding:"40px 0",color:"#999"}},[el("p",{style:{fontSize:"32px",marginBottom:"8px"}},"📺"),el("p",{style:{fontSize:"14px",fontStyle:"italic"}},"No videos yet. Add a YouTube link above!")]));
+  else resources.forEach(r=>{
+    const card=el("div",{style:{background:"#fff",borderRadius:"14px",marginBottom:"12px",overflow:"hidden",boxShadow:"0 2px 8px rgba(0,0,0,0.07)",border:"2px solid #e5e7eb"}});
+    card.appendChild(el("div",{style:{display:"flex",gap:"12px",padding:"14px 14px 10px",alignItems:"center"}},[el("div",{style:{flexShrink:"0",width:"52px",height:"52px",borderRadius:"12px",background:"#dcfce7",display:"flex",alignItems:"center",justifyContent:"center",fontSize:"26px"}},"▶️"),el("div",{style:{flex:1,minWidth:0}},[el("p",{style:{margin:"0 0 4px",fontSize:"14px",color:"#333",fontWeight:"bold",lineHeight:"1.4"}},r.desc||"Untitled video"),el("p",{style:{margin:0,fontSize:"11px",color:"#86efac",overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}},r.url)])]));
+    const btnBar=el("div",{style:{display:"flex",borderTop:"1px solid #f0fdf4"}});
+    btnBar.appendChild(el("a",{href:r.url,style:{flex:1,padding:"11px 0",background:"#14532d",color:"#fff",fontSize:"12px",fontWeight:"bold",textAlign:"center",display:"block"}},"▶ Open"));
+    btnBar.appendChild(el("div",{style:{width:"1px",background:"#166534"}},null));
+    btnBar.appendChild(el("a",{href:r.url,target:"_blank",rel:"noopener noreferrer",style:{flex:1,padding:"11px 0",background:"#166534",color:"#fff",fontSize:"12px",fontWeight:"bold",textAlign:"center",display:"block"}},"▶ New Tab"));
+    btnBar.appendChild(el("div",{style:{width:"1px",background:"#e5e7eb"}},null));
+    btnBar.appendChild(el("button",{style:{flex:1,padding:"11px 0",background:"#f0fdf4",color:"#14532d",border:"none",fontSize:"12px",cursor:"pointer"},onClick:()=>set({resEditId:r.id,resUrl:r.url,resDesc:r.desc})},"Edit"));
+    btnBar.appendChild(el("div",{style:{width:"1px",background:"#e5e7eb"}},null));
+    btnBar.appendChild(el("button",{style:{flex:1,padding:"11px 0",background:"#f0fdf4",color:"#ef4444",border:"none",fontSize:"12px",cursor:"pointer"},onClick:()=>saveList("__resources",resources.filter(x=>x.id!==r.id))},"Delete"));
+    card.appendChild(btnBar);inner.appendChild(card);
+  });
+  wrap.appendChild(inner);
+  return wrap;
+}
+
+/* ════════════════════════ MAIN RENDER ════════════════════════ */
+function render(){
+  const app=document.getElementById("app");
+  app.innerHTML="";
+  if(state.view==="home")app.appendChild(renderHome());
+  else if(state.view==="detail")app.appendChild(renderDetail());
+  else if(state.view==="progress")app.appendChild(renderProgress());
+  else if(state.view==="resources")app.appendChild(renderResources());
+}
+render();
+</script>
+</body>
+</html>
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8"/>
+<meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+<title>5M Faith Tracker</title>
+<style>
+*{box-sizing:border-box;margin:0;padding:0;}
+body{font-family:Georgia,serif;background:#f9f7ff;min-height:100vh;}
 button,input,textarea{font-family:Georgia,serif;}
 a{text-decoration:none;}
 .card{background:#fff;border-radius:14px;padding:18px;margin-bottom:16px;box-shadow:0 2px 8px rgba(0,0,0,0.07);}
