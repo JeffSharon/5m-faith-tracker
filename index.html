@@ -319,7 +319,88 @@ function renderProgress(){
   else if(state.sumTab==="reflections")renderReflections(inner);
   else if(state.sumTab==="outcomes")renderOutcomes(inner);
   else if(state.sumTab==="others")renderOthers(inner);
-  else if(state.sumTab==="export")renderExport(inner);
+  else if(state.sumTab==="export"){
+    // Simple direct render test
+    const testCard=document.createElement("div");
+    testCard.className="card";
+    testCard.innerHTML="<p style='color:#3b0764;font-weight:bold;font-size:15px;margin:0 0 14px'>📤 Export Entries</p>";
+
+    // Sections
+    const secLabel=document.createElement("p");
+    secLabel.style.cssText="font-size:12px;color:#888;margin:0 0 8px;text-transform:uppercase;letter-spacing:0.5px;";
+    secLabel.textContent="Select Sections";
+    testCard.appendChild(secLabel);
+
+    if(!state.expSections)state.expSections={mind:true,mood:true,matter:true,ministry:true,mystery:true,outcomes:true,others:true};
+    const secWrap=document.createElement("div");
+    secWrap.style.cssText="display:flex;flex-wrap:wrap;gap:8px;margin-bottom:16px;";
+    const allSecs=[...MS.map(m=>({key:m.key,label:m.emoji+" "+m.label,color:m.color,light:m.light,accent:m.accent})),{key:"outcomes",label:"🎯 Outcomes",color:"#3b0764",light:"#f3e8ff",accent:"#a855f7"},{key:"others",label:"✍️ Others",color:"#3b0764",light:"#f3e8ff",accent:"#a855f7"}];
+    allSecs.forEach(s=>{
+      const active=!!state.expSections[s.key];
+      const b=document.createElement("button");
+      b.textContent=s.label;
+      b.style.cssText=`padding:7px 14px;border-radius:99px;border:2px solid ${active?s.accent:"#e5e7eb"};background:${active?s.light:"#fff"};color:${active?s.color:"#888"};font-weight:${active?"bold":"normal"};font-size:13px;cursor:pointer;font-family:Georgia,serif;`;
+      b.onclick=()=>{state.expSections[s.key]=!state.expSections[s.key];render();};
+      secWrap.appendChild(b);
+    });
+    testCard.appendChild(secWrap);
+
+    // Date range
+    const drLabel=document.createElement("p");
+    drLabel.style.cssText="font-size:12px;color:#888;margin:0 0 8px;text-transform:uppercase;letter-spacing:0.5px;";
+    drLabel.textContent="Date Range";
+    testCard.appendChild(drLabel);
+    if(!state.expFrom){const fm=new Date();fm.setDate(1);state.expFrom=fm.toISOString().split("T")[0];}
+    if(!state.expTo)state.expTo=today();
+    const drRow=document.createElement("div");
+    drRow.style.cssText="display:flex;gap:8px;margin-bottom:16px;align-items:center;";
+    const fi=document.createElement("input");fi.type="date";fi.value=state.expFrom;fi.max=today();
+    fi.style.cssText="flex:1;border:2px solid #e5e7eb;border-radius:10px;padding:9px 12px;font-size:14px;outline:none;color:#333;box-sizing:border-box;font-family:Georgia,serif;";
+    fi.onchange=e=>{state.expFrom=e.target.value;};
+    const sep=document.createElement("span");sep.textContent="to";sep.style.cssText="color:#888;font-size:13px;flex-shrink:0;";
+    const ti=document.createElement("input");ti.type="date";ti.value=state.expTo;ti.max=today();
+    ti.style.cssText="flex:1;border:2px solid #e5e7eb;border-radius:10px;padding:9px 12px;font-size:14px;outline:none;color:#333;box-sizing:border-box;font-family:Georgia,serif;";
+    ti.onchange=e=>{state.expTo=e.target.value;};
+    drRow.appendChild(fi);drRow.appendChild(sep);drRow.appendChild(ti);
+    testCard.appendChild(drRow);
+
+    // Organise by
+    if(!state.expOrg)state.expOrg="category";
+    const orgLabel=document.createElement("p");
+    orgLabel.style.cssText="font-size:12px;color:#888;margin:0 0 8px;text-transform:uppercase;letter-spacing:0.5px;";
+    orgLabel.textContent="Organise By";
+    testCard.appendChild(orgLabel);
+    const orgRow=document.createElement("div");
+    orgRow.style.cssText="display:flex;gap:8px;margin-bottom:20px;";
+    [{id:"category",label:"By Category"},{id:"date",label:"By Date"},{id:"both",label:"Both"}].forEach(o=>{
+      const b=document.createElement("button");b.textContent=o.label;
+      b.style.cssText=`flex:1;padding:8px 0;border-radius:10px;border:2px solid ${state.expOrg===o.id?"#3b0764":"#e5e7eb"};background:${state.expOrg===o.id?"#3b0764":"#fff"};color:${state.expOrg===o.id?"#fff":"#666"};font-size:13px;cursor:pointer;font-family:Georgia,serif;`;
+      b.onclick=()=>{state.expOrg=o.id;render();};
+      orgRow.appendChild(b);
+    });
+    testCard.appendChild(orgRow);
+
+    // Hint
+    const hint=document.createElement("p");
+    hint.style.cssText="font-size:12px;color:#888;margin:0 0 12px;line-height:1.6;";
+    hint.textContent="PDF: A print dialog opens — choose Save as PDF. Word: A .doc file downloads directly.";
+    testCard.appendChild(hint);
+
+    // Buttons
+    const btnRow=document.createElement("div");
+    btnRow.style.cssText="display:flex;gap:8px;";
+    const pdfBtn=document.createElement("button");
+    pdfBtn.textContent="📄 Export PDF";
+    pdfBtn.style.cssText="flex:1;padding:12px 0;background:#dc2626;color:#fff;border:none;border-radius:10px;font-size:14px;cursor:pointer;font-weight:bold;font-family:Georgia,serif;";
+    pdfBtn.onclick=()=>doExport("pdf");
+    const wordBtn=document.createElement("button");
+    wordBtn.textContent="📝 Export Word";
+    wordBtn.style.cssText="flex:1;padding:12px 0;background:#2563eb;color:#fff;border:none;border-radius:10px;font-size:14px;cursor:pointer;font-weight:bold;font-family:Georgia,serif;";
+    wordBtn.onclick=()=>doExport("word");
+    btnRow.appendChild(pdfBtn);btnRow.appendChild(wordBtn);
+    testCard.appendChild(btnRow);
+    inner.appendChild(testCard);
+  }
   wrap.appendChild(inner);
   return wrap;
 }
