@@ -629,6 +629,96 @@ function renderResources(){
   return wrap;
 }
 
+/* ════════════════════════ BUILD EXPORT HTML ════════════════════════ */
+function buildExportHTML(dates){
+  const from=state.expFrom,to=state.expTo;
+  const fmtD=d=>new Date(d).toLocaleDateString("en-SG",{day:"numeric",month:"long",year:"numeric"});
+  const fmtFull=d=>new Date(d).toLocaleDateString("en-SG",{weekday:"long",day:"numeric",month:"long",year:"numeric"});
+  const title=`5M Faith Tracker Reflections (${fmtD(from)} – ${fmtD(to)})`;
+  const sec=state.expSections||{};
+  const org=state.expOrg||"category";
+
+  let body="";
+
+  function mEntryHTML(m,entry){
+    return `<div style="background:${m.light};border-left:4px solid ${m.accent};border-radius:10px;padding:14px 16px;margin-bottom:16px;">
+      <div style="font-size:11px;color:#aaa;text-transform:uppercase;letter-spacing:0.5px;margin-bottom:6px;">${m.emoji} ${m.label} — ${fmtFull(entry.date)}</div>
+      ${entry.thoughts?`<div style="font-size:11px;color:#aaa;text-transform:uppercase;margin-bottom:4px;">Reflection</div><div style="font-size:14px;line-height:1.8;">${entry.thoughts}</div>`:""}
+      ${entry.applications&&entry.applications.length>0?`<div style="font-size:11px;color:#aaa;text-transform:uppercase;margin:10px 0 6px;">Application Steps</div>${entry.applications.map(a=>`<div style="display:flex;gap:8px;margin-bottom:5px;font-size:13px;"><span style="display:inline-block;width:14px;height:14px;border-radius:3px;border:2px solid ${a.checked?"#22c55e":"#d1d5db"};background:${a.checked?"#22c55e":"#fff"};flex-shrink:0;margin-top:2px;"></span><span style="${a.checked?"text-decoration:line-through;color:#9ca3af;":""}">${a.text}</span></div>`).join("")}`:""}
+    </div>`;
+  }
+
+  if(org==="category"||org==="both"){
+    body+=`<h2 style="color:#3b0764;border-bottom:2px solid #3b0764;padding-bottom:8px;margin:30px 0 16px;">📂 By Category</h2>`;
+    MS.forEach(m=>{
+      if(!sec[m.key])return;
+      const entries=dates.map(d=>{
+        const e=state.data[d]?.[m.key];
+        const t=e?.thoughts;const hasT=t&&t.replace(/<[^>]*>/g,"").trim();
+        if(!hasT&&!e?.applications?.length)return null;
+        return{date:d,thoughts:t||"",applications:e.applications||[]};
+      }).filter(Boolean);
+      if(!entries.length)return;
+      body+=`<div style="background:${m.color};color:#fff;padding:12px 18px;border-radius:10px;margin:20px 0 12px;font-size:18px;font-weight:bold;">${m.emoji} ${m.label}</div>`;
+      entries.forEach(entry=>{body+=mEntryHTML(m,entry);});
+    });
+    if(sec.outcomes){
+      const entries=(state.data.__outcomes||[]).filter(o=>o.date>=from&&o.date<=to).sort((a,b)=>a.date.localeCompare(b.date));
+      if(entries.length){
+        body+=`<div style="background:#3b0764;color:#fff;padding:12px 18px;border-radius:10px;margin:20px 0 12px;font-size:18px;font-weight:bold;">🎯 Outcomes</div>`;
+        entries.forEach(o=>{
+          const m2=MS.find(x=>x.key===o.mKey);
+          body+=`<div style="background:#f3e8ff;border-left:4px solid #a855f7;border-radius:10px;padding:14px 16px;margin-bottom:16px;">
+            ${m2?`<div style="font-size:12px;font-weight:bold;color:${m2.color};margin-bottom:4px;">${m2.emoji} ${m2.label}</div>`:""}
+            <div style="font-size:11px;color:#999;margin-bottom:6px;">${fmtFull(o.date)}</div>
+            <div style="font-size:14px;line-height:1.8;">${o.text||""}</div>
+          </div>`;
+        });
+      }
+    }
+    if(sec.others){
+      const entries=(state.data.__others||[]).filter(o=>o.date>=from&&o.date<=to).sort((a,b)=>a.date.localeCompare(b.date));
+      if(entries.length){
+        body+=`<div style="background:#3b0764;color:#fff;padding:12px 18px;border-radius:10px;margin:20px 0 12px;font-size:18px;font-weight:bold;">✍️ Others</div>`;
+        entries.forEach(o=>{body+=`<div style="background:#f3e8ff;border-left:4px solid #a855f7;border-radius:10px;padding:14px 16px;margin-bottom:16px;">${o.title?`<div style="font-weight:bold;color:#3b0764;margin-bottom:4px;">${o.title}</div>`:""}<div style="font-size:11px;color:#999;margin-bottom:6px;">${fmtFull(o.date)}</div><div style="font-size:14px;line-height:1.8;">${o.text||""}</div></div>`;});
+      }
+    }
+  }
+
+  if(org==="date"||org==="both"){
+    body+=`<h2 style="color:#3b0764;border-bottom:2px solid #3b0764;padding-bottom:8px;margin:40px 0 16px;">📅 By Date</h2>`;
+    dates.forEach(d=>{
+      const dayItems=[];
+      MS.forEach(m=>{
+        if(!sec[m.key])return;
+        const e=state.data[d]?.[m.key];
+        const t=e?.thoughts;const hasT=t&&t.replace(/<[^>]*>/g,"").trim();
+        if(!hasT&&!e?.applications?.length)return;
+        dayItems.push(mEntryHTML(m,{date:d,thoughts:t||"",applications:e.applications||[]}));
+      });
+      if(sec.outcomes)(state.data.__outcomes||[]).filter(o=>o.date===d).forEach(o=>{
+        const m2=MS.find(x=>x.key===o.mKey);
+        dayItems.push(`<div style="background:#f3e8ff;border-left:4px solid #a855f7;border-radius:10px;padding:14px 16px;margin-bottom:16px;">${m2?`<div style="font-size:12px;font-weight:bold;color:${m2.color};margin-bottom:4px;">🎯 Outcome — ${m2.emoji} ${m2.label}</div>`:""}<div style="font-size:14px;line-height:1.8;">${o.text||""}</div></div>`);
+      });
+      if(sec.others)(state.data.__others||[]).filter(o=>o.date===d).forEach(o=>{
+        dayItems.push(`<div style="background:#f3e8ff;border-left:4px solid #a855f7;border-radius:10px;padding:14px 16px;margin-bottom:16px;">${o.title?`<div style="font-weight:bold;color:#3b0764;margin-bottom:4px;">${o.title}</div>`:""}<div style="font-size:14px;line-height:1.8;">${o.text||""}</div></div>`);
+      });
+      if(dayItems.length){
+        body+=`<div style="font-size:13px;font-weight:bold;color:#555;text-transform:uppercase;letter-spacing:0.5px;margin:20px 0 8px;border-bottom:1px solid #e5e7eb;padding-bottom:4px;">${fmtFull(d)}</div>`;
+        body+=dayItems.join("");
+      }
+    });
+  }
+
+  return `<!DOCTYPE html><html><head><meta charset="UTF-8"/>
+  <style>body{font-family:Georgia,serif;color:#333;padding:40px;max-width:800px;margin:0 auto;}img{max-width:100%;border-radius:8px;}a{color:#3b82f6;}</style>
+  </head><body>
+  <h1 style="color:#3b0764;font-size:24px;margin-bottom:4px;">✝ ${title}</h1>
+  <p style="color:#888;font-size:14px;margin-bottom:30px;">Generated on ${fmtD(today())}</p>
+  ${body}
+  </body></html>`;
+}
+
 /* ════════════════════════ MAIN RENDER ════════════════════════ */
 function render(){
   const app=document.getElementById("app");
